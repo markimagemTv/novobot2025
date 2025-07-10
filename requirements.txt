@@ -1,4 +1,4 @@
 python-telegram-bot==13.15
-mercadopago==1.5.10
+mercadopago>=2.1.0
 python-dotenv
 requests

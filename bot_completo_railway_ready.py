@@ -107,7 +107,6 @@ PRODUCT_CATALOG = {
     ],
     "🔥 PROMOÇÕES": [
         {"name": "📺 PACOTE 30 CRÉDITOS EI TV", "price": 300.00, "discount": False},
-        {"name": "👑 PACOTE 30 CRÉDITOS GOLD PLAY", "price": 300.00, "discount": False},
     ]
 }
 
@@ -489,7 +488,7 @@ def format_cart_message(cart_items):
                 if 'fields' in item.details:
                     fields = item.details['fields']
                     if fields:
-                        fields_text = ", ".join(f"{k}: {v}" for k, v in fields.items())
+                        fields_text = ", ".join(f"{k}: `{v}`" for k, v in fields.items())
                         details += f"\n   ↳ {fields_text}"
             
             message += f"{i}. {item.name} - R${price:.2f}{details}\n"
@@ -569,7 +568,7 @@ def format_order_details(order, include_items=True):
                         
                         # Add any fields if present
                         if 'fields' in item.details and item.details['fields']:
-                            fields_text = ", ".join(f"{k}: {v}" for k, v in item.details['fields'].items())
+                            fields_text = ", ".join(f"{k}: `{v}`" for k, v in item.details['fields'].items())
                             details += f"\n   ↳ {fields_text}"
                     
                     message += f"{i}. {item.name} - R${item.price:.2f}{details}\n"
@@ -1180,7 +1179,8 @@ def collect_product_fields(update: Update, context: CallbackContext):
         )
         
         for field, value in fields_collected.items():
-            message += f"- {field}: {value}\n"
+            message += f"- {field}: `{value}`
+"
         
         keyboard = [
             [InlineKeyboardButton("🛒 Ver Carrinho", callback_data="view_cart")],
@@ -2121,7 +2121,7 @@ def notify_admin_new_order(context: CallbackContext, order, user):
             
             # Add any fields if present
             if 'fields' in item.details and item.details['fields']:
-                fields_text = ", ".join(f"{k}: {v}" for k, v in item.details['fields'].items())
+                fields_text = ", ".join(f"{k}: `{v}`" for k, v in item.details['fields'].items())
                 details += f"\n   ↳ {fields_text}"
         
         message += f"{i}. {item.name} - R${item.price:.2f}{details}\n"
@@ -4642,65 +4642,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-# === RELATÓRIO MENSAL ADMINISTRATIVO ===
-from telegram.ext import CommandHandler
-from datetime import datetime
-import os
-
-def gerar_relatorio_mensal(ano, mes):
-    pedidos_aprovados = []
-    total = 0.0
-
-    for order in db.orders.values():
-        try:
-            data_pedido = datetime.strptime(order.created_at, "%Y-%m-%d %H:%M:%S")
-            if order.status == "pago" and data_pedido.year == ano and data_pedido.month == mes:
-                pedidos_aprovados.append(order)
-                total += sum(item.price for item in order.items)
-        except Exception as e:
-            logger.warning(f"Erro ao processar pedido {order.id}: {e}")
-
-    return pedidos_aprovados, total
-
-def relatorio_handler(update, context):
-    user_id = update.effective_user.id
-    if str(user_id) != ADMIN_ID:
-        update.message.reply_text("⛔ Acesso negado. Esse comando é exclusivo para administradores.")
-        return
-
-    try:
-        if len(context.args) != 2:
-            update.message.reply_text("✉️ Use o formato: /relatorio <ano> <mes>\nEx: /relatorio 2025 7")
-            return
-
-        ano = int(context.args[0])
-        mes = int(context.args[1])
-        if mes < 1 or mes > 12:
-            update.message.reply_text("Mês inválido. Digite um valor entre 1 e 12.")
-            return
-
-        pedidos, total = gerar_relatorio_mensal(ano, mes)
-
-        if not pedidos:
-            update.message.reply_text(f"Nenhum pedido aprovado encontrado para {mes:02d}/{ano}.")
-            return
-
-        os.makedirs("relatorios", exist_ok=True)
-        file_path = f"relatorios/relatorio_{ano}_{mes:02d}.txt"
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(f"Relatório de Pedidos Aprovados - {mes:02d}/{ano}\n")
-            f.write(f"Total de pedidos: {len(pedidos)}\n")
-            f.write(f"Valor total: R${total:.2f}\n\n")
-            for i, pedido in enumerate(pedidos, 1):
-                total_pedido = sum(item.price for item in pedido.items)
-                f.write(f"{i}. Pedido #{pedido.id} - R${total_pedido:.2f} em {pedido.created_at}\n")
-
-        with open(file_path, "rb") as f:
-            update.message.reply_document(f, filename=os.path.basename(file_path))
-
-    except Exception as e:
-        logger.error(f"Erro ao gerar relatório: {e}")
-        update.message.reply_text("Erro ao gerar relatório. Verifique os parâmetros ou tente novamente.")
-
-dispatcher.add_handler(CommandHandler("relatorio", relatorio_handler, pass_args=True))

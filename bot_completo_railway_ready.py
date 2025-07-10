@@ -488,7 +488,7 @@ def format_cart_message(cart_items):
                 if 'fields' in item.details:
                     fields = item.details['fields']
                     if fields:
-                        fields_text = ", ".join(f"{k}: `{v}`" for k, v in fields.items())
+                        fields_text = ", ".join(f"{k}: {v}" for k, v in fields.items())
                         details += f"\n   ↳ {fields_text}"
             
             message += f"{i}. {item.name} - R${price:.2f}{details}\n"
@@ -568,7 +568,7 @@ def format_order_details(order, include_items=True):
                         
                         # Add any fields if present
                         if 'fields' in item.details and item.details['fields']:
-                            fields_text = ", ".join(f"{k}: `{v}`" for k, v in item.details['fields'].items())
+                            fields_text = ", ".join(f"{k}: {v}" for k, v in item.details['fields'].items())
                             details += f"\n   ↳ {fields_text}"
                     
                     message += f"{i}. {item.name} - R${item.price:.2f}{details}\n"
@@ -1179,8 +1179,7 @@ def collect_product_fields(update: Update, context: CallbackContext):
         )
         
         for field, value in fields_collected.items():
-            message += f"- {field}: `{value}`
-"
+            message += f"- {field}: {value}\n"
         
         keyboard = [
             [InlineKeyboardButton("🛒 Ver Carrinho", callback_data="view_cart")],
@@ -2121,7 +2120,7 @@ def notify_admin_new_order(context: CallbackContext, order, user):
             
             # Add any fields if present
             if 'fields' in item.details and item.details['fields']:
-                fields_text = ", ".join(f"{k}: `{v}`" for k, v in item.details['fields'].items())
+                fields_text = ", ".join(f"{k}: {v}" for k, v in item.details['fields'].items())
                 details += f"\n   ↳ {fields_text}"
         
         message += f"{i}. {item.name} - R${item.price:.2f}{details}\n"

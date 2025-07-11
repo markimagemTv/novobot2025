@@ -11,6 +11,7 @@ import io
 import signal
 import requests
 import subprocess
+import pandas as pd  # ✅ Import necessário
 from datetime import datetime
 from relatorio import gerar_relatorio_mensal
 
@@ -25,8 +26,8 @@ def comando_relatorio(update, context):
                 continue
             data = datetime.strptime(pedido["created_at"], "%Y-%m-%d %H:%M:%S")
             mes = data.strftime("%Y-%m")
-            total = sum(item["price"] for item in pedido["items"])
-            quantidade = len(pedido["items"])
+            total = sum(item["price"] for item in pedido.get("items", []))
+            quantidade = len(pedido.get("items", []))
             dados.append({"mes": mes, "total": total, "quantidade": quantidade})
 
         if not dados:
@@ -46,7 +47,6 @@ def comando_relatorio(update, context):
         update.message.reply_text(f"❌ Erro ao gerar relatório: {e}")
 
 # Importações locais (serão resolvidas após a definição do logger)
-# Essas importações serão tratadas mais adiante no código
 git_manager = None
 catalog_manager = None
 
@@ -66,6 +66,7 @@ except ImportError:
         logger.info("dotenv não está disponível, ignorando arquivo .env")
         pass
     logger.warning("Módulo dotenv não encontrado. Variáveis de ambiente devem ser definidas manualmente.")
+
 
 # Configuração para compatibilidade de codificação em diferentes sistemas
 try:

@@ -12,55 +12,9 @@ import signal
 import requests
 import subprocess
 from datetime import datetime
-from relatorio import gerar_relatorio_mensal
 
-def comando_relatorio(update, context):
-    try:
-        with open("data/orders.json", "r", encoding="utf-8") as f:
-            pedidos = json.load(f)
-
-        dados_por_mes = {}
-
-        for pedido in pedidos.values():
-            if pedido.get("status") != "pago":
-                continue
-
-            data = datetime.strptime(pedido["created_at"], "%Y-%m-%d %H:%M:%S")
-            mes = data.strftime("%Y-%m")
-
-            total = sum(item["price"] for item in pedido.get("items", []))
-            quantidade = len(pedido.get("items", []))
-
-            if mes not in dados_por_mes:
-                dados_por_mes[mes] = {
-                    "pedidos": 0,
-                    "itens": 0,
-                    "arrecadado": 0.0
-                }
-
-            dados_por_mes[mes]["pedidos"] += 1
-            dados_por_mes[mes]["itens"] += quantidade
-            dados_por_mes[mes]["arrecadado"] += total
-
-        if not dados_por_mes:
-            update.message.reply_text("Nenhum pedido pago encontrado.")
-            return
-
-        # Criar a mensagem formatada
-        mensagem = "📊 *Relatório Mensal de Pedidos Pagos:*\n\n"
-        for mes in sorted(dados_por_mes.keys()):
-            dados = dados_por_mes[mes]
-            mensagem += (
-                f"🗓 *{mes}*\n"
-                f"• Pedidos: {dados['pedidos']}\n"
-                f"• Itens vendidos: {dados['itens']}\n"
-                f"• Arrecadado: R$ {dados['arrecadado']:.2f}\n\n"
-            )
-
-        update.message.reply_text(mensagem, parse_mode="Markdown")
-    except Exception as e:
-        update.message.reply_text(f"❌ Erro ao gerar relatório: {e}")
 # Importações locais (serão resolvidas após a definição do logger)
+# Essas importações serão tratadas mais adiante no código
 git_manager = None
 catalog_manager = None
 
@@ -80,7 +34,6 @@ except ImportError:
         logger.info("dotenv não está disponível, ignorando arquivo .env")
         pass
     logger.warning("Módulo dotenv não encontrado. Variáveis de ambiente devem ser definidas manualmente.")
-
 
 # Configuração para compatibilidade de codificação em diferentes sistemas
 try:
@@ -4680,7 +4633,6 @@ def main():
     dispatcher.add_handler(CallbackQueryHandler(continue_shopping, pattern=r"^(back_to_categories|back_to_products)$"))
 
     # Campo de produto
-    dp.add_handler(CommandHandler("relatorio", comando_relatorio))
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, collect_product_fields))
 
     updater.start_polling()

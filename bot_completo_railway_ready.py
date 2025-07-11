@@ -13,7 +13,38 @@ import requests
 import subprocess
 from datetime import datetime
 from relatorio import gerar_relatorio_mensal
+import pandas as pd
 
+def comando_relatorio(update, context):
+    try:
+        with open("data/orders.json", "r", encoding="utf-8") as f:
+            pedidos = json.load(f)
+
+        dados = []
+        for pedido in pedidos.values():
+            if pedido.get("status") != "pago":
+                continue
+            data = datetime.strptime(pedido["created_at"], "%Y-%m-%d %H:%M:%S")
+            mes = data.strftime("%Y-%m")
+            total = sum(item["price"] for item in pedido["items"])
+            quantidade = len(pedido["items"])
+            dados.append({"mes": mes, "total": total, "quantidade": quantidade})
+
+        if not dados:
+            update.message.reply_text("Nenhum pedido pago encontrado.")
+            return
+
+        df = pd.DataFrame(dados)
+        resumo = df.groupby("mes").agg(
+            pedidos=("mes", "count"),
+            itens=("quantidade", "sum"),
+            arrecadado=("total", "sum")
+        ).reset_index()
+
+        resumo.to_csv("data/relatorio_mensal.csv", index=False)
+        update.message.reply_text("📊 Relatório mensal gerado com sucesso! Verifique o arquivo `data/relatorio_mensal.csv`.")
+    except Exception as e:
+        update.message.reply_text(f"❌ Erro ao gerar relatório: {e}")
 
 # Importações locais (serão resolvidas após a definição do logger)
 # Essas importações serão tratadas mais adiante no código
@@ -4635,6 +4666,7 @@ def main():
     dispatcher.add_handler(CallbackQueryHandler(continue_shopping, pattern=r"^(back_to_categories|back_to_products)$"))
 
     # Campo de produto
+    dp.add_handler(CommandHandler("relatorio", comando_relatorio))
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, collect_product_fields))
 
     updater.start_polling()

@@ -13,6 +13,78 @@ import requests
 import subprocess
 from datetime import datetime
 
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+from collections import defaultdict
+from datetime import datetime
+
+# 1. Função para gerar relatório mensal
+def gerar_relatorio_mensal(mes=None, ano=None):
+    agora = datetime.now()
+    mes = mes or agora.month
+    ano = ano or agora.year
+
+    pedidos = db.orders.values()
+    pedidos_filtrados = [
+        p for p in pedidos
+        if p.status == 'pago' and datetime.strptime(p.created_at, "%Y-%m-%d %H:%M:%S").month == mes
+        and datetime.strptime(p.created_at, "%Y-%m-%d %H:%M:%S").year == ano
+    ]
+
+    total_vendas = 0
+    total_pedidos = 0
+    produtos_contagem = defaultdict(int)
+
+    for pedido in pedidos_filtrados:
+        total_pedidos += 1
+        for item in pedido.items:
+            total_vendas += item.price
+            produtos_contagem[item.name] += 1
+
+    if not pedidos_filtrados:
+        return f"📊 Relatório de {mes:02d}/{ano}:\n\nNenhum pedido pago encontrado."
+
+    produtos_mais_vendidos = sorted(produtos_contagem.items(), key=lambda x: x[1], reverse=True)
+    texto_produtos = "\n".join([f"- {nome}: {qtd} venda(s)" for nome, qtd in produtos_mais_vendidos])
+
+    relatorio = (
+        f"📊 *Relatório de {mes:02d}/{ano}*\n\n"
+        f"🧾 Total de pedidos pagos: {total_pedidos}\n"
+        f"💵 Total em vendas: R${total_vendas:.2f}\n\n"
+        f"🏆 Produtos mais vendidos:\n{texto_produtos}"
+    )
+
+    return relatorio
+
+# 2. Handler de comando para admins
+def comando_relatorio_mensal(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if str(user_id) != str(ADMIN_ID):
+        update.message.reply_text("❌ Você não tem permissão para usar este comando.")
+        return
+
+    try:
+        args = context.args
+        if len(args) == 2:
+            mes = int(args[0])
+            ano = int(args[1])
+        else:
+            mes = None
+            ano = None
+
+        relatorio = gerar_relatorio_mensal(mes, ano)
+        update.message.reply_text(relatorio, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Erro ao gerar relatório mensal: {e}")
+        update.message.reply_text("❌ Erro ao gerar relatório. Verifique os parâmetros ou tente novamente.")
+
+# 3. Registra o comando no dispatcher
+dispatcher.add_handler(CommandHandler("relatorio_mensal", comando_relatorio_mensal, pass_args=True))
+
+# OBS: As funcionalidades relacionadas ao GitHub foram removidas do menu de ajuda e estão desativadas permanentemente no sistema.
+
+
 # Importações locais (serão resolvidas após a definição do logger)
 # Essas importações serão tratadas mais adiante no código
 git_manager = None

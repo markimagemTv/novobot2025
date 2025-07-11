@@ -20,28 +20,43 @@ def comando_relatorio(update, context):
         with open("data/orders.json", "r", encoding="utf-8") as f:
             pedidos = json.load(f)
 
-        dados = []
+        dados_por_mes = {}
+
         for pedido in pedidos.values():
             if pedido.get("status") != "pago":
                 continue
+
             data = datetime.strptime(pedido["created_at"], "%Y-%m-%d %H:%M:%S")
             mes = data.strftime("%Y-%m")
+
             total = sum(item["price"] for item in pedido.get("items", []))
             quantidade = len(pedido.get("items", []))
-            dados.append({"mes": mes, "total": total, "quantidade": quantidade})
 
-        if not dados:
+            if mes not in dados_por_mes:
+                dados_por_mes[mes] = {
+                    "pedidos": 0,
+                    "itens": 0,
+                    "arrecadado": 0.0
+                }
+
+            dados_por_mes[mes]["pedidos"] += 1
+            dados_por_mes[mes]["itens"] += quantidade
+            dados_por_mes[mes]["arrecadado"] += total
+
+        if not dados_por_mes:
             update.message.reply_text("Nenhum pedido pago encontrado.")
             return
 
-        df = pd.DataFrame(dados)
-        resumo = df.groupby("mes").agg(
-            pedidos=("mes", "count"),
-            itens=("quantidade", "sum"),
-            arrecadado=("total", "sum")
-        ).reset_index()
+        # Escrever CSV manualmente
+        output_path = "data/relatorio_mensal.csv"
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        resumo.to_csv("data/relatorio_mensal.csv", index=False)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("mes,pedidos,itens,arrecadado\n")
+            for mes in sorted(dados_por_mes.keys()):
+                dados = dados_por_mes[mes]
+                f.write(f"{mes},{dados['pedidos']},{dados['itens']},{dados['arrecadado']:.2f}\n")
+
         update.message.reply_text("📊 Relatório mensal gerado com sucesso! Verifique o arquivo `data/relatorio_mensal.csv`.")
     except Exception as e:
         update.message.reply_text(f"❌ Erro ao gerar relatório: {e}")

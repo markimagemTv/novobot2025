@@ -12,6 +12,8 @@ import signal
 import requests
 import subprocess
 from datetime import datetime
+from relatorio import gerar_relatorio_mensal
+
 
 # Importações locais (serão resolvidas após a definição do logger)
 # Essas importações serão tratadas mais adiante no código

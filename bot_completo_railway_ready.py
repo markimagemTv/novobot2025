@@ -11,7 +11,6 @@ import io
 import signal
 import requests
 import subprocess
-import pandas as pd  # ✅ Import necessário
 from datetime import datetime
 from relatorio import gerar_relatorio_mensal
 

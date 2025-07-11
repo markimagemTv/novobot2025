@@ -13,7 +13,6 @@ import requests
 import subprocess
 from datetime import datetime
 from relatorio import gerar_relatorio_mensal
-import pandas as pd
 
 def comando_relatorio(update, context):
     try:

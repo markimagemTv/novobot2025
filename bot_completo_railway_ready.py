@@ -46,20 +46,20 @@ def comando_relatorio(update, context):
             update.message.reply_text("Nenhum pedido pago encontrado.")
             return
 
-        # Escrever CSV manualmente
-        output_path = "data/relatorio_mensal.csv"
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Criar a mensagem formatada
+        mensagem = "📊 *Relatório Mensal de Pedidos Pagos:*\n\n"
+        for mes in sorted(dados_por_mes.keys()):
+            dados = dados_por_mes[mes]
+            mensagem += (
+                f"🗓 *{mes}*\n"
+                f"• Pedidos: {dados['pedidos']}\n"
+                f"• Itens vendidos: {dados['itens']}\n"
+                f"• Arrecadado: R$ {dados['arrecadado']:.2f}\n\n"
+            )
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write("mes,pedidos,itens,arrecadado\n")
-            for mes in sorted(dados_por_mes.keys()):
-                dados = dados_por_mes[mes]
-                f.write(f"{mes},{dados['pedidos']},{dados['itens']},{dados['arrecadado']:.2f}\n")
-
-        update.message.reply_text("📊 Relatório mensal gerado com sucesso! Verifique o arquivo `data/relatorio_mensal.csv`.")
+        update.message.reply_text(mensagem, parse_mode="Markdown")
     except Exception as e:
         update.message.reply_text(f"❌ Erro ao gerar relatório: {e}")
-
 # Importações locais (serão resolvidas após a definição do logger)
 git_manager = None
 catalog_manager = None

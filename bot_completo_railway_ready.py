@@ -4540,8 +4540,7 @@ def main():
         dp.add_handler(CallbackQueryHandler(list_pending_orders, pattern=r'^admin_back_to_pending$'))
         dp.add_handler(CallbackQueryHandler(mark_as_delivered, pattern=r'^admin_deliver_'))
         dp.add_handler(CallbackQueryHandler(cancel_order, pattern=r'^admin_cancel_'))
-        dp.add_handler(CommandHandler("relatorio", comando_relatorio))
-
+    
         # General commands
         dp.add_handler(CommandHandler('help', help_command))
         dp.add_handler(MessageHandler(Filters.regex(r'^❓ Ajuda$'), help_command))

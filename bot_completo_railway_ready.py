@@ -4639,8 +4639,7 @@ def main():
     updater.start_polling()
     updater.idle()
 
-if __name__ == "__main__":
-    main()
+
 
 
 
@@ -4694,3 +4693,6 @@ def relatorio_vendas(update: Update, context: CallbackContext):
 
 # Adicionar handler ao dispatcher
 dispatcher.add_handler(CommandHandler("relatorio_vendas", relatorio_vendas))
+
+if __name__ == "__main__":
+    main()

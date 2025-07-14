@@ -4631,6 +4631,7 @@ def main():
     dispatcher.add_handler(CallbackQueryHandler(check_payment_status, pattern=r"^check_payment_"))
     dispatcher.add_handler(CallbackQueryHandler(order_details, pattern=r"^order_details_"))
     dispatcher.add_handler(CallbackQueryHandler(continue_shopping, pattern=r"^(back_to_categories|back_to_products)$"))
+    dispatcher.add_handler(CommandHandler("relatorio_vendas", relatorio_vendas))
 
     # Campo de produto
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, collect_product_fields))

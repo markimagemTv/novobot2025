@@ -4641,3 +4641,55 @@ def main():
 if __name__ == "__main__":
     main()
 
+
+
+
+# Adicionando funcionalidade de relatório de vendas para o ADMIN_ID
+from telegram.ext import CommandHandler
+from datetime import datetime
+from collections import defaultdict
+
+# Novo handler para o comando /relatorio_vendas
+def relatorio_vendas(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+
+    if str(user_id) != str(ADMIN_ID):
+        update.message.reply_text("⛔️ Este comando é exclusivo para administradores.")
+        return
+
+    # Agrupar pedidos por mês
+    vendas_por_mes = defaultdict(lambda: {"total": 0.0, "pedidos": 0})
+    for order in db.orders.values():
+        if order.status == "pago":
+            data = datetime.strptime(order.created_at, "%Y-%m-%d %H:%M:%S")
+            mes = data.strftime("%Y-%m")
+            total = sum(item.price for item in order.items)
+            vendas_por_mes[mes]["total"] += total
+            vendas_por_mes[mes]["pedidos"] += 1
+
+    # Ordenar por data (decrescente)
+    meses_ordenados = sorted(vendas_por_mes.keys(), reverse=True)
+    if not meses_ordenados:
+        update.message.reply_text("Nenhuma venda registrada ainda.")
+        return
+
+    atual = meses_ordenados[0]
+    msg = f"📊 *Relatório de Vendas - {datetime.strptime(atual, '%Y-%m').strftime('%B/%Y')}*\n\n"
+    msg += f"✅ Total de Vendas: R$ {vendas_por_mes[atual]['total']:.2f}\n"
+    msg += f"🛒 Total de Pedidos: {vendas_por_mes[atual]['pedidos']}\n\n"
+
+    # Comparativo
+    msg += f"📈 Comparativo com meses anteriores:\n"
+    for mes in meses_ordenados[1:4]:
+        atual_valor = vendas_por_mes[atual]["total"]
+        passado_valor = vendas_por_mes[mes]["total"]
+        diferenca = atual_valor - passado_valor
+        percentual = (diferenca / passado_valor * 100) if passado_valor != 0 else 0
+        simbolo = "+" if percentual >= 0 else ""
+        mes_formatado = datetime.strptime(mes, "%Y-%m").strftime("%B/%Y")
+        msg += f"- {mes_formatado}: R$ {passado_valor:.2f} ({simbolo}{percentual:.1f}%)\n"
+
+    update.message.reply_text(msg, parse_mode="Markdown")
+
+# Adicionar handler ao dispatcher
+dispatcher.add_handler(CommandHandler("relatorio_vendas", relatorio_vendas))

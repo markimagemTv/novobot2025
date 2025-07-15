@@ -8,7 +8,7 @@ import mercadopago
 # Carrega variáveis de ambiente
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-MP_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN")
+MP_TOKEN = os.getenv("MERCADO_PAGO_TOKEN")
 
 # Configura Mercado Pago
 sdk = mercadopago.SDK(MP_TOKEN)

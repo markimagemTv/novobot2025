@@ -4,7 +4,7 @@ import re
 from dotenv import load_dotenv
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+    ReplyKeyboardMarkup, KeyboardButton
 )
 from telegram.ext import (
     Updater, CommandHandler, CallbackContext, CallbackQueryHandler,
@@ -12,240 +12,178 @@ from telegram.ext import (
 )
 import mercadopago
 
-# === Configurações ===
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 MP_TOKEN = os.getenv("MERCADO_PAGO_TOKEN")
 sdk = mercadopago.SDK(MP_TOKEN)
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-ADMIN_IDS = {123456789}  # Substitua pelo seu ID real
+logging.basicConfig(level=logging.INFO)
+ADMIN_IDS = {123456789}  # Seu ID aqui
 ESPERANDO_MAC = range(1)
-
 CATEGORIAS = {
-    "Eletrônicos": [
-        {"nome": "Fone Bluetooth", "preco": 150},
-        {"nome": "Carregador Turbo", "preco": 80}
-    ],
-    "Moda": [
-        {"nome": "Camiseta Estampada", "preco": 60},
-        {"nome": "Tênis Casual", "preco": 200}
-    ],
-    "Livros": [
-        {"nome": "Python para Iniciantes", "preco": 90},
-        {"nome": "Dom Quixote", "preco": 45}
-    ],
-    "ATIVAR APP": [
-        {"nome": "MEGA IPTV", "preco": 75}
-    ]
+    "Eletrônicos": [{"nome": "Fone Bluetooth", "preco": 150}, {"nome": "Carregador Turbo", "preco": 80}],
+    "Moda": [{"nome": "Camiseta Estampada", "preco": 60}, {"nome": "Tênis Casual", "preco": 200}],
+    "Livros": [{"nome": "Python para Iniciantes", "preco": 90}, {"nome": "Dom Quixote", "preco": 45}],
+    "ATIVAR APP": [{"nome": "MEGA IPTV", "preco": 75}]
 }
+user_temp_data = {}  # {user_id: {"carrinho": [], "produto_pendente": {}, "last_input": ""}}
 
-user_temp_data = {}  # {user_id: {"carrinho": [], "produto_pendente": {}}}
-
-# === Teclado Persistente ===
 def teclado_persistente():
-    return ReplyKeyboardMarkup([
-        ["🛍️ Menu", "🛒 Carrinho"],
-        ["✅ Finalizar", "❌ Cancelar"]
-    ], resize_keyboard=True, one_time_keyboard=False)
+    return ReplyKeyboardMarkup([["🛍️ Menu", "🛒 Carrinho"], ["✅ Finalizar", "❌ Cancelar"]], resize_keyboard=True)
 
-
-# === Início ===
 def start(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    user_temp_data[user_id] = {"carrinho": []}
-    update.message.reply_text(
-        "👋 Bem-vindo à loja virtual!",
-        reply_markup=teclado_persistente()
-    )
+    uid = update.effective_user.id
+    user_temp_data[uid] = {"carrinho": [], "last_input": ""}
+    update.message.reply_text("Bem-vindo à loja!", reply_markup=teclado_persistente())
     mostrar_menu_principal(update, context)
 
-
-# === Menus ===
-def mostrar_menu_principal(update_or_query, context):
-    user_id = (
-        update_or_query.effective_user.id
-        if hasattr(update_or_query, "effective_user")
-        else update_or_query.from_user.id
-    )
-
-    keyboard = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIAS]
-    if user_id in ADMIN_IDS:
-        keyboard.append([InlineKeyboardButton("📊 Admin", callback_data="admin_menu")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    send_or_edit(update_or_query, "📦 Escolha uma categoria:", reply_markup)
-
-
-def mostrar_produtos(update: Update, categoria: str):
-    query = update.callback_query
-    produtos = CATEGORIAS[categoria]
-
-    keyboard = [
-        [InlineKeyboardButton(f"{p['nome']} - R${p['preco']}", callback_data=f"prod:{categoria}:{i}")]
-        for i, p in enumerate(produtos)
-    ]
-    keyboard.append([InlineKeyboardButton("⬅ Voltar", callback_data="voltar")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    query.edit_message_text(f"📚 Produtos em *{categoria}*:", reply_markup=reply_markup, parse_mode='Markdown')
-
-
-def send_or_edit(target, text, reply_markup=None):
-    if hasattr(target, "message") and target.message:
-        target.message.reply_text(text, reply_markup=reply_markup or teclado_persistente())
-    elif hasattr(target, "edit_message_text"):
-        target.edit_message_text(text, reply_markup=reply_markup)
-    else:
-        target.reply_text(text, reply_markup=reply_markup or teclado_persistente())
-
-
-# === Handlers ===
-def categoria_handler(update: Update, context: CallbackContext):
-    categoria = update.callback_query.data.split(":")[1]
-    mostrar_produtos(update, categoria)
-
+def mostrar_menu_principal(update_or_query, context: CallbackContext):
+    uid = update_or_query.effective_user.id if hasattr(update_or_query, "effective_user") else update_or_query.from_user.id
+    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIAS]
+    buttons.append([InlineKeyboardButton("📋 Copiar entrada / replay", callback_data="copiar")])
+    keyboard = InlineKeyboardMarkup(buttons)
+    send_or_edit(update_or_query, "Escolha uma categoria ou ação:", keyboard)
 
 def produto_handler(update: Update, context: CallbackContext):
     query = update.callback_query
-    _, categoria, index = query.data.split(":")
-    produto = CATEGORIAS[categoria][int(index)]
-    user_id = query.from_user.id
-
-    if categoria == "ATIVAR APP":
-        user_temp_data[user_id]["produto_pendente"] = produto
-        query.message.reply_text("🔐 Digite o MAC de 12 dígitos (sem `:`):")
+    _, cat, idx = query.data.split(":")
+    user = query.from_user.id
+    prod = CATEGORIAS[cat][int(idx)]
+    if cat == "ATIVAR APP":
+        user_temp_data[user]["produto_pendente"] = prod
+        query.message.reply_text("Digite o MAC de 12 dígitos sem ':'")
         return ESPERANDO_MAC
     else:
-        user_temp_data[user_id]["carrinho"].append(produto)
-        query.answer(f"{produto['nome']} adicionado ao carrinho!")
+        user_temp_data[user]["carrinho"].append(prod)
+        query.answer(f"{prod['nome']} adicionado.")
         mostrar_menu_principal(query, context)
         return ConversationHandler.END
 
+def categoria_handler(update: Update, context: CallbackContext):
+    cat = update.callback_query.data.split(":")[1]
+    produtos = CATEGORIAS[cat]
+    keyboard = [[InlineKeyboardButton(f"{p['nome']} - R${p['preco']}", callback_data=f"prod:{cat}:{i}")]
+                for i, p in enumerate(produtos)]
+    keyboard.append([InlineKeyboardButton("⬅ Voltar", callback_data="voltar")])
+    update.callback_query.edit_message_text(f"Produtos: *{cat}*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 def receber_mac(update: Update, context: CallbackContext):
+    uid = update.message.from_user.id
     mac = update.message.text.strip()
-    user_id = update.message.from_user.id
-
     if not re.fullmatch(r"[A-Fa-f0-9]{12}", mac):
-        update.message.reply_text("❌ MAC inválido! Digite exatamente 12 caracteres alfanuméricos.")
+        update.message.reply_text("MAC inválido! Digite novamente.")
         return ESPERANDO_MAC
-
-    produto = user_temp_data[user_id].pop("produto_pendente", None)
-    if not produto:
-        update.message.reply_text("⚠️ Nenhum produto aguardando MAC.")
-        return ConversationHandler.END
-
-    nome_com_mac = f"{produto['nome']} (MAC: {mac})"
-    user_temp_data[user_id]["carrinho"].append({"nome": nome_com_mac, "preco": produto["preco"]})
-    update.message.reply_text(f"✅ {nome_com_mac} adicionado ao carrinho.")
+    prod = user_temp_data[uid].pop("produto_pendente", None)
+    nome = f"{prod['nome']} (MAC: {mac})"
+    user_temp_data[uid]["carrinho"].append({"nome": nome, "preco": prod["preco"]})
+    update.message.reply_text(f"{nome} adicionado ao carrinho.")
     mostrar_menu_principal(update, context)
     return ConversationHandler.END
 
-
 def ver_carrinho(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    carrinho = user_temp_data.get(user_id, {}).get("carrinho", [])
-
+    uid = update.effective_user.id
+    carrinho = user_temp_data[uid]["carrinho"]
     if not carrinho:
-        update.message.reply_text("🛒 Seu carrinho está vazio.")
-        return
-
-    texto = "🛒 *Seu Carrinho:*\n\n"
+        return update.message.reply_text("Carrinho vazio", reply_markup=teclado_persistente())
+    txt = "🛒 Carrinho:\n"
     total = 0
-    for item in carrinho:
-        texto += f"- {item['nome']} — R${item['preco']:.2f}\n"
-        total += item['preco']
-    texto += f"\n💰 *Total:* R${total:.2f}"
+    for i, item in enumerate(carrinho, 1):
+        nome = item.get("nome", item["nome"])
+        preco = item.get("preco", item["preco"])
+        txt += f"{i}. {nome} — R${preco:.2f}\n"
+        total += preco
+    txt += f"\nTotal: R${total:.2f}"
+    update.message.reply_text(txt, reply_markup=teclado_persistente())
 
-    update.message.reply_text(texto, parse_mode="Markdown", reply_markup=teclado_persistente())
+def finalizar_compra_handler(update: Update, context: CallbackContext):
+    if isinstance(update, Update) and update.callback_query:
+        query = update.callback_query
+        uid = query.from_user.id
+        query.answer()
+        origin_msg = query.message
+    else:
+        uid = update.effective_user.id
+        origin_msg = update.message
 
-
-def finalizar_compra(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    carrinho = user_temp_data.get(user_id, {}).get("carrinho", [])
-
+    carrinho = user_temp_data[uid]["carrinho"]
     if not carrinho:
-        update.message.reply_text("🛒 Carrinho vazio!", reply_markup=teclado_persistente())
-        return
+        return origin_msg.reply_text("Carrinho vazio!", reply_markup=teclado_persistente())
 
-    total = 0
-    itens = []
-    for item in carrinho:
-        total += item["preco"]
-        itens.append({
-            "title": item["nome"],
-            "quantity": 1,
-            "currency_id": "BRL",
-            "unit_price": float(item["preco"])
-        })
-
-    preference_data = {
+    itens = [{"title": it["nome"], "quantity": 1, "currency_id":"BRL", "unit_price": float(it["preco"])}
+             for it in carrinho]
+    total = sum(it["unit_price"] for it in itens)
+    pref = {
         "items": itens,
-        "payment_methods": {
-            "excluded_payment_types": [{"id": "credit_card"}],
-            "installments": 1
-        },
-        "payer": {"email": "comprador@email.com"},
-        "back_urls": {"success": "https://seusite.com/sucesso"},
-        "auto_return": "approved"
+        "payment_methods": {"excluded_payment_types": [{"id":"credit_card"}], "installments":1},
+        "payer":{"email":"comprador@email.com"},
+        "back_urls":{"success":"https://seusite.com/sucesso"},
+        "auto_return":"approved"
     }
-
     try:
-        response = sdk.preference().create(preference_data)
-        init_point = response['response']['init_point']
+        resp = sdk.preference().create(pref)
+        link = resp["response"]["init_point"]
     except Exception as e:
-        logging.error(f"Erro Mercado Pago: {e}")
-        update.message.reply_text("❌ Erro ao gerar link de pagamento.")
-        return
+        logging.error("MercadoPago: %s", e)
+        return origin_msg.reply_text("Erro ao gerar pagamento.", reply_markup=teclado_persistente())
 
-    update.message.reply_text(
-        f"✅ *Pedido Gerado!*\n💵 Total: R${total:.2f}\n\n👉 Clique no link para pagar via Pix ou boleto:\n\n{init_point}",
-        parse_mode="Markdown"
-    )
-    update.message.reply_text("🕐 Após o pagamento, aguarde a confirmação.")
-    user_temp_data[user_id]["carrinho"] = []
+    origin_msg.reply_text(f"✅ Pedido por R${total:.2f} gerado.\nPague aqui: {link}")
+    origin_msg.reply_text("Após o pagamento, confirme abaixo:", reply_markup=InlineKeyboardMarkup([[
+        InlineKeyboardButton("Confirmar Entrega", callback_data=f"confirm:{uid}")
+    ]]))
+    # notifica admin
+    for aid in ADMIN_IDS:
+        context.bot.send_message(aid, f"Novo pedido de {uid}: R${total:.2f}")
+    user_temp_data[uid]["carrinho"] = []
 
+def confirmar_entrega(update: Update, context: CallbackContext):
+    query = update.callback_query
+    uid = int(query.data.split(":")[1])
+    context.bot.send_message(uid, "Seu pedido foi marcado como ENTREGUE. Obrigado!")
+    query.edit_message_text("Entrega confirmada ✅")
 
-def voltar_handler(update: Update, context: CallbackContext):
-    mostrar_menu_principal(update.callback_query, context)
+def copiar_entrada(update: Update, context: CallbackContext):
+    query = update.callback_query
+    uid = query.from_user.id
+    last = user_temp_data.setdefault(uid, {}).get("last_input")
+    if not last:
+        query.answer("Sem entrada salva.")
+    else:
+        context.bot.send_message(uid, f"Cópia: `{last}`", parse_mode="Markdown")
+    query.answer()
 
+def save_last_input(update: Update, context: CallbackContext):
+    if update.message and update.message.text and update.message.text not in ["🛍️ Menu","🛒 Carrinho","✅ Finalizar","❌ Cancelar"]:
+        user_temp_data.setdefault(update.message.from_user.id, {})["last_input"] = update.message.text
 
-def cancelar(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    user_temp_data[user_id]["carrinho"] = []
-    update.message.reply_text("❌ Carrinho cancelado.", reply_markup=teclado_persistente())
+def send_or_edit(target, text, markup=None):
+    if hasattr(target, "message") and target.message:
+        target.message.reply_text(text, reply_markup=markup or teclado_persistente())
+    elif hasattr(target, "edit_message_text"):
+        target.edit_message_text(text, reply_markup=markup)
 
-
-# === Main ===
 def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    dp = Updater(TOKEN).dispatcher
 
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(produto_handler, pattern=r"^prod:")],
+    conv = ConversationHandler(entry_points=[CallbackQueryHandler(produto_handler, pattern=r"^prod:")],
         states={ESPERANDO_MAC: [MessageHandler(Filters.text & ~Filters.command, receber_mac)]},
-        fallbacks=[CommandHandler("cancelar", cancelar)],
-        allow_reentry=True
+        fallbacks=[CommandHandler("❌ Cancelar", lambda u,c: None)], allow_reentry=True
     )
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(conv_handler)
-
+    dp.add_handler(conv)
     dp.add_handler(CallbackQueryHandler(categoria_handler, pattern=r"^cat:"))
-    dp.add_handler(CallbackQueryHandler(voltar_handler, pattern=r"^voltar$"))
+    dp.add_handler(CallbackQueryHandler(copiar_entrada, pattern="^copiar$"))
+    dp.add_handler(CallbackQueryHandler(lambda u,c: mostrar_menu_principal(u, c), pattern="^voltar$"))
+    dp.add_handler(CallbackQueryHandler(finalizar_compra_handler, pattern="^finalizar$"))
+    dp.add_handler(CallbackQueryHandler(confirmar_entrega, pattern="^confirm:"))
+    dp.add_handler(MessageHandler(Filters.regex("^🛍️ Menu"), mostrar_menu_principal))
+    dp.add_handler(MessageHandler(Filters.regex("^🛒 Carrinho"), ver_carrinho))
+    dp.add_handler(MessageHandler(Filters.regex("^✅ Finalizar"), finalizar_compra_handler))
+    dp.add_handler(MessageHandler(Filters.regex("^❌ Cancelar"), lambda u,c: u.message.reply_text("Carrinho limpo.", reply_markup=teclado_persistente())))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, save_last_input))
 
-    dp.add_handler(CallbackQueryHandler(lambda u, c: ver_carrinho(u, c), pattern=r"^ver_carrinho$"))
-    dp.add_handler(CallbackQueryHandler(lambda u, c: finalizar_compra(u, c), pattern=r"^finalizar$"))
+    Updater(TOKEN).start_polling()
+    Updater(TOKEN).idle()
 
-    # Teclado persistente handlers
-    dp.add_handler(MessageHandler(Filters.regex("🛍️ Menu"), mostrar_menu_principal))
-    dp.add_handler(MessageHandler(Filters.regex("🛒 Carrinho"), ver_carrinho))
-    dp.add_handler(MessageHandler(Filters.regex("✅ Finalizar"), finalizar_compra))
-    dp.add_handler(MessageHandler(Filters.regex("❌ Cancelar"), cancelar))
-
-    updater.start_polling()
-    updater.idle()
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

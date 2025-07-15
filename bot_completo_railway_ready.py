@@ -485,13 +485,15 @@ def format_cart_message(cart_items):
                         details = f" - {credits} créditos{discount_text}"
                 
                 # Add any fields if present
-                if 'fields' in item.details:
-                    fields = item.details['fields']
-                    if fields:
-                        fields_text = ", ".join(f"{k}: {v}" for k, v in fields.items())
-                        details += f"\n   ↳ {fields_text}"
+               if 'fields' in item.details:
+    fields = item.details['fields']
+    if fields:
+        fields_text = ", ".join(f"`{k}: {v}`" for k, v in fields.items())
+        details += f"\n   ↳ {fields_text}"
+
             
-            message += f"{i}. {item.name} - R${price:.2f}{details}\n"
+
+         message += f"{i}. {item.name} - R${price:.2f}{details}\n"
             total += price
             
         except Exception as e:

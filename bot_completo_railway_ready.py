@@ -20,13 +20,9 @@ sdk = mercadopago.SDK(MP_TOKEN)
 # Logger
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# IDs dos administradores (exemplo, coloque os seus)
 ADMIN_IDS = {123456789}  # Substitua pelo seu Telegram user_id
-
-# Estado da conversa
 ESPERANDO_MAC = range(1)
 
-# Mock de categorias e produtos
 CATEGORIAS = {
     "Eletrônicos": [
         {"nome": "Fone Bluetooth", "preco": 150},
@@ -45,45 +41,34 @@ CATEGORIAS = {
     ]
 }
 
-# Armazenamento temporário por usuário
 user_temp_data = {}  # {user_id: {"carrinho": [...], "produto_pendente": {...} (opcional)}}
 
-# /start
 def start(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in user_temp_data:
-        user_temp_data[user_id] = {"carrinho": []}
-    else:
-        user_temp_data[user_id]["carrinho"] = []  # zera carrinho no start
+    user_temp_data[user_id] = {"carrinho": []}
     mostrar_menu_principal(update, context)
 
 def mostrar_menu_principal(update_or_query, context):
-    # Detecta user_id dependendo do objeto recebido (Update, CallbackQuery ou Message)
     if hasattr(update_or_query, "effective_user"):
         user_id = update_or_query.effective_user.id
     elif hasattr(update_or_query, "from_user"):
         user_id = update_or_query.from_user.id
     else:
-        user_id = None  # fallback, não esperado
+        user_id = None
 
     keyboard = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIAS]
     keyboard.append([InlineKeyboardButton("🛒 Finalizar Compra", callback_data="finalizar")])
-
     if user_id in ADMIN_IDS:
         keyboard.append([InlineKeyboardButton("📊 Admin", callback_data="admin_menu")])
-
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Envia resposta apropriada dependendo do objeto recebido
     if hasattr(update_or_query, "message") and update_or_query.message:
         update_or_query.message.reply_text("Bem-vindo à loja! Escolha uma categoria:", reply_markup=reply_markup)
     elif hasattr(update_or_query, "edit_message_text"):
         update_or_query.edit_message_text("Escolha uma categoria:", reply_markup=reply_markup)
     else:
-        # Caso seja Message direto ou outro objeto
         update_or_query.reply_text("Bem-vindo à loja! Escolha uma categoria:", reply_markup=reply_markup)
 
-# Categoria handler
 def categoria_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     categoria = query.data.split(":")[1]
@@ -97,18 +82,16 @@ def categoria_handler(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     query.edit_message_text(f"Produtos em *{categoria}*:", reply_markup=reply_markup, parse_mode='Markdown')
 
-# Produto handler
 def produto_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     _, categoria, index = query.data.split(":")
     produto = CATEGORIAS[categoria][int(index)]
-
     user_id = query.from_user.id
+
     if user_id not in user_temp_data:
         user_temp_data[user_id] = {"carrinho": []}
 
     if categoria == "ATIVAR APP":
-        # Produto requer MAC
         user_temp_data[user_id]["produto_pendente"] = produto
         query.message.reply_text("Digite o MAC de 12 dígitos (apenas letras e números, sem `:`):")
         return ESPERANDO_MAC
@@ -118,7 +101,6 @@ def produto_handler(update: Update, context: CallbackContext):
         mostrar_menu_principal(query, context)
         return ConversationHandler.END
 
-# Handler para receber MAC
 def receber_mac(update: Update, context: CallbackContext):
     mac = update.message.text.strip()
     user_id = update.message.from_user.id
@@ -140,7 +122,6 @@ def receber_mac(update: Update, context: CallbackContext):
     mostrar_menu_principal(update, context)
     return ConversationHandler.END
 
-# Finalizar compra
 def finalizar_compra_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
@@ -163,32 +144,31 @@ def finalizar_compra_handler(update: Update, context: CallbackContext):
 
     preference_data = {
         "items": itens,
-        "payment_method_id": "pix",
+        "payment_methods": {
+            "excluded_payment_types": [{"id": "credit_card"}],
+            "installments": 1
+        },
         "payer": {
-            "email": "cliente@email.com"
-        }
+            "email": "comprador@email.com"
+        },
+        "back_urls": {
+            "success": "https://www.seusite.com/sucesso"
+        },
+        "auto_return": "approved"
     }
 
-    payment = sdk.payment().create(preference_data)["response"]
-    qr_code = payment["point_of_interaction"]["transaction_data"]["qr_code"]
-    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?data={qr_code}&size=300x300"
-
-    context.bot.send_photo(
-        chat_id=user_id,
-        photo=qr_url,
-        caption=f"*Compra Finalizada*\nTotal: R${total:.2f}\n\n📎 Código Pix:\n`{qr_code}`",
-        parse_mode="Markdown"
-    )
+    preference_response = sdk.preference().create(preference_data)
+    init_point = preference_response["response"]["init_point"]
 
     context.bot.send_message(
         chat_id=user_id,
-        text="🕐 Aguarde a confirmação do pagamento. Obrigado pela compra!"
+        text=f"🛍️ *Compra Finalizada!*\nTotal: R${total:.2f}\n\nClique abaixo para pagar via Pix ou outros meios:\n\n{init_point}",
+        parse_mode="Markdown"
     )
 
-    # Limpa carrinho após pagamento
+    context.bot.send_message(chat_id=user_id, text="🕐 Após o pagamento, aguarde a confirmação.")
     user_temp_data[user_id]["carrinho"] = []
 
-# Voltar
 def voltar_handler(update: Update, context: CallbackContext):
     mostrar_menu_principal(update.callback_query, context)
 
@@ -196,17 +176,13 @@ def cancelar(update: Update, context: CallbackContext):
     update.message.reply_text("❌ Operação cancelada.")
     return ConversationHandler.END
 
-# Aqui você pode adicionar seus handlers/admin futuramente
-
 def main():
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(produto_handler, pattern=r"^prod:")],
-        states={
-            ESPERANDO_MAC: [MessageHandler(Filters.text & ~Filters.command, receber_mac)],
-        },
+        states={ESPERANDO_MAC: [MessageHandler(Filters.text & ~Filters.command, receber_mac)]},
         fallbacks=[CommandHandler("cancelar", cancelar)],
         allow_reentry=True
     )

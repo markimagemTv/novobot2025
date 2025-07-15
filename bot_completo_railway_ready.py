@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler
 import mercadopago
+import requests
 
 # Carrega variáveis de ambiente
 load_dotenv()
@@ -52,41 +53,41 @@ def categoria_handler(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     query.edit_message_text(f"Produtos em *{categoria}*:", reply_markup=reply_markup, parse_mode='Markdown')
 
-# Callback para produto
+# Callback para produto com pagamento via PIX
 def produto_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     _, categoria, index = query.data.split(":")
     produto = CATEGORIAS[categoria][int(index)]
 
-    # Simula criação de preferência de pagamento
-    preference_data = {
-        "items": [
-            {
-                "title": produto["nome"],
-                "quantity": 1,
-                "currency_id": "BRL",
-                "unit_price": float(produto["preco"])
-            }
-        ],
-        "back_urls": {
-            "success": "https://www.google.com",
-            "failure": "https://www.google.com"
-        },
-        "auto_return": "approved"
+    payment_data = {
+        "transaction_amount": float(produto["preco"]),
+        "description": produto["nome"],
+        "payment_method_id": "pix",
+        "payer": {
+            "email": "comprador@email.com"  # obrigatório para simulação de pagamento Pix
+        }
     }
 
-    preference_response = sdk.preference().create(preference_data)
-    init_point = preference_response["response"]["init_point"]
+    payment_response = sdk.payment().create(payment_data)
+    payment = payment_response["response"]
 
-    keyboard = [[InlineKeyboardButton("Pagar com Mercado Pago 💳", url=init_point)],
-                [InlineKeyboardButton("⬅ Voltar", callback_data=f"cat:{categoria}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    qr_code_base64 = payment["point_of_interaction"]["transaction_data"]["qr_code_base64"]
+    qr_code = payment["point_of_interaction"]["transaction_data"]["qr_code"]
+    pix_copy_paste = payment["point_of_interaction"]["transaction_data"]["qr_code"]
 
-    query.edit_message_text(
-        text=f"*{produto['nome']}*\nPreço: R${produto['preco']}\nClique abaixo para pagar:",
-        parse_mode='Markdown',
-        reply_markup=reply_markup
+    # Envia QR code como imagem
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?data={qr_code}&size=300x300"
+    
+    context.bot.send_photo(
+        chat_id=query.message.chat_id,
+        photo=qr_url,
+        caption=f"*{produto['nome']}*\n\n💰 *R${produto['preco']}*\n\n📎 Copie o código Pix:\n`{pix_copy_paste}`",
+        parse_mode="Markdown"
     )
+
+    keyboard = [[InlineKeyboardButton("⬅ Voltar", callback_data=f"cat:{categoria}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.message.reply_text("Após o pagamento, você será notificado!", reply_markup=reply_markup)
 
 # Voltar
 def voltar_handler(update: Update, context: CallbackContext):

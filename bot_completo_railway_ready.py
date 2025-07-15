@@ -8,7 +8,6 @@ from telegram.ext import (
     MessageHandler, Filters, ConversationHandler
 )
 import mercadopago
-import requests
 
 # Carrega variáveis de ambiente
 load_dotenv()
@@ -43,18 +42,13 @@ CATEGORIAS = {
     ]
 }
 
-# ... [código acima permanece o mesmo até CATEGORIAS]
-
-# Estado da conversa
-ESPERANDO_MAC = range(1)
-
-# Armazenamento temporário por usuário
-user_temp_data = {}  # {user_id: {"carrinho": [prod], "esperando_mac": True/False}}
+# Armazenamento por usuário
+user_temp_data = {}  # {user_id: {"carrinho": [...], "produto_pendente": {...}}}
 
 # /start
 def start(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    user_temp_data[user_id] = {"carrinho": []}  # zera carrinho
+    user_temp_data[user_id] = {"carrinho": []}  # limpa carrinho
     mostrar_menu_principal(update, context)
 
 def mostrar_menu_principal(update_or_query, context):
@@ -86,13 +80,12 @@ def produto_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     _, categoria, index = query.data.split(":")
     produto = CATEGORIAS[categoria][int(index)]
-
     user_id = query.from_user.id
+
     if user_id not in user_temp_data:
         user_temp_data[user_id] = {"carrinho": []}
 
     if categoria == "ATIVAR APP":
-        # Produto requer MAC
         user_temp_data[user_id]["produto_pendente"] = produto
         query.message.reply_text("Digite o MAC de 12 dígitos (apenas letras e números, sem `:`):")
         return ESPERANDO_MAC
@@ -102,7 +95,7 @@ def produto_handler(update: Update, context: CallbackContext):
         mostrar_menu_principal(query, context)
         return ConversationHandler.END
 
-# Handler para receber MAC
+# Receber MAC e adicionar ao carrinho
 def receber_mac(update: Update, context: CallbackContext):
     mac = update.message.text.strip()
     user_id = update.message.from_user.id
@@ -124,7 +117,7 @@ def receber_mac(update: Update, context: CallbackContext):
     mostrar_menu_principal(update, context)
     return ConversationHandler.END
 
-# Finalizar compra
+# Finalizar compra com pagamento único Pix
 def finalizar_compra_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
@@ -134,33 +127,32 @@ def finalizar_compra_handler(update: Update, context: CallbackContext):
         query.answer("Carrinho vazio!", show_alert=True)
         return
 
-    itens = []
-    total = 0
-    for item in carrinho:
-        itens.append({
-            "title": item["nome"],
-            "quantity": 1,
-            "currency_id": "BRL",
-            "unit_price": float(item["preco"])
-        })
-        total += item["preco"]
+    # Soma total e monta descrição
+    total = sum(item["preco"] for item in carrinho)
+    descricao = " | ".join(item["nome"] for item in carrinho)
+    if len(descricao) > 250:  # Mercado Pago limite de descrição
+        descricao = descricao[:247] + "..."
 
-    preference_data = {
-        "items": itens,
+    # Cria pagamento Pix direto
+    payment_data = {
+        "transaction_amount": float(total),
+        "description": descricao,
         "payment_method_id": "pix",
         "payer": {
-            "email": "cliente@email.com"
+            "email": "comprador@email.com"
         }
     }
 
-    payment = sdk.payment().create(preference_data)["response"]
+    payment_response = sdk.payment().create(payment_data)
+    payment = payment_response["response"]
+
     qr_code = payment["point_of_interaction"]["transaction_data"]["qr_code"]
     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?data={qr_code}&size=300x300"
 
     context.bot.send_photo(
         chat_id=user_id,
         photo=qr_url,
-        caption=f"*Compra Finalizada*\nTotal: R${total:.2f}\n\n📎 Código Pix:\n`{qr_code}`",
+        caption=f"*Compra Finalizada*\nTotal: R${total:.2f}\n\n📎 Copie e cole o código Pix abaixo:\n`{qr_code}`",
         parse_mode="Markdown"
     )
 
@@ -169,7 +161,7 @@ def finalizar_compra_handler(update: Update, context: CallbackContext):
         text="🕐 Aguarde a confirmação do pagamento. Obrigado pela compra!"
     )
 
-    # Limpa carrinho após pagamento
+    # Limpa carrinho após gerar pagamento
     user_temp_data[user_id]["carrinho"] = []
 
 # Voltar

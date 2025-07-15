@@ -43,14 +43,29 @@ CATEGORIAS = {
     ]
 }
 
+# ... [código acima permanece o mesmo até CATEGORIAS]
+
+# Estado da conversa
+ESPERANDO_MAC = range(1)
+
 # Armazenamento temporário por usuário
-user_temp_data = {}
+user_temp_data = {}  # {user_id: {"carrinho": [prod], "esperando_mac": True/False}}
 
 # /start
 def start(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    user_temp_data[user_id] = {"carrinho": []}  # zera carrinho
+    mostrar_menu_principal(update, context)
+
+def mostrar_menu_principal(update_or_query, context):
     keyboard = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIAS]
+    keyboard.append([InlineKeyboardButton("🛒 Finalizar Compra", callback_data="finalizar")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Bem-vindo à loja! Escolha uma categoria:", reply_markup=reply_markup)
+
+    if update_or_query.message:
+        update_or_query.message.reply_text("Bem-vindo à loja! Escolha uma categoria:", reply_markup=reply_markup)
+    else:
+        update_or_query.edit_message_text("Escolha uma categoria:", reply_markup=reply_markup)
 
 # Categoria handler
 def categoria_handler(update: Update, context: CallbackContext):
@@ -73,18 +88,21 @@ def produto_handler(update: Update, context: CallbackContext):
     produto = CATEGORIAS[categoria][int(index)]
 
     user_id = query.from_user.id
-    user_temp_data[user_id] = {
-        "categoria": categoria,
-        "produto": produto
-    }
+    if user_id not in user_temp_data:
+        user_temp_data[user_id] = {"carrinho": []}
 
     if categoria == "ATIVAR APP":
+        # Produto requer MAC
+        user_temp_data[user_id]["produto_pendente"] = produto
         query.message.reply_text("Digite o MAC de 12 dígitos (apenas letras e números, sem `:`):")
         return ESPERANDO_MAC
     else:
-        return enviar_pagamento_pix(query, context, produto["nome"], produto["preco"])
+        user_temp_data[user_id]["carrinho"].append({"nome": produto["nome"], "preco": produto["preco"]})
+        query.message.reply_text(f"✅ {produto['nome']} adicionado ao carrinho.")
+        mostrar_menu_principal(query, context)
+        return ConversationHandler.END
 
-# Handler para receber MAC e continuar
+# Handler para receber MAC
 def receber_mac(update: Update, context: CallbackContext):
     mac = update.message.text.strip()
     user_id = update.message.from_user.id
@@ -93,49 +111,70 @@ def receber_mac(update: Update, context: CallbackContext):
         update.message.reply_text("❌ MAC inválido! Digite exatamente 12 caracteres alfanuméricos (sem dois pontos).")
         return ESPERANDO_MAC
 
-    produto = user_temp_data[user_id]["produto"]
-    produto_nome = f"{produto['nome']} (MAC: {mac})"
-    produto_preco = produto["preco"]
+    produto = user_temp_data[user_id].get("produto_pendente")
+    if not produto:
+        update.message.reply_text("❌ Erro: nenhum produto aguardando MAC.")
+        return ConversationHandler.END
 
-    enviar_pagamento_pix(update, context, produto_nome, produto_preco)
+    nome_formatado = f"{produto['nome']} (MAC: {mac})"
+    user_temp_data[user_id]["carrinho"].append({"nome": nome_formatado, "preco": produto["preco"]})
+    del user_temp_data[user_id]["produto_pendente"]
+
+    update.message.reply_text(f"✅ {nome_formatado} adicionado ao carrinho.")
+    mostrar_menu_principal(update, context)
     return ConversationHandler.END
 
-# Função comum para criar e enviar pagamento Pix
-def enviar_pagamento_pix(update_or_query, context, nome, preco):
-    chat_id = update_or_query.effective_chat.id
+# Finalizar compra
+def finalizar_compra_handler(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    carrinho = user_temp_data.get(user_id, {}).get("carrinho", [])
 
-    payment_data = {
-        "transaction_amount": float(preco),
-        "description": nome,
+    if not carrinho:
+        query.answer("Carrinho vazio!", show_alert=True)
+        return
+
+    itens = []
+    total = 0
+    for item in carrinho:
+        itens.append({
+            "title": item["nome"],
+            "quantity": 1,
+            "currency_id": "BRL",
+            "unit_price": float(item["preco"])
+        })
+        total += item["preco"]
+
+    preference_data = {
+        "items": itens,
         "payment_method_id": "pix",
         "payer": {
-            "email": "comprador@email.com"
+            "email": "cliente@email.com"
         }
     }
 
-    payment_response = sdk.payment().create(payment_data)
-    payment = payment_response["response"]
-
+    payment = sdk.payment().create(preference_data)["response"]
     qr_code = payment["point_of_interaction"]["transaction_data"]["qr_code"]
     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?data={qr_code}&size=300x300"
 
     context.bot.send_photo(
-        chat_id=chat_id,
+        chat_id=user_id,
         photo=qr_url,
-        caption=f"*{nome}*\n💰 *R${preco}*\n\n📎 Copie e cole o código Pix:\n`{qr_code}`",
+        caption=f"*Compra Finalizada*\nTotal: R${total:.2f}\n\n📎 Código Pix:\n`{qr_code}`",
         parse_mode="Markdown"
     )
 
-    keyboard = [[InlineKeyboardButton("⬅ Voltar", callback_data="voltar")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    context.bot.send_message(chat_id=chat_id, text="Após o pagamento, você será notificado!", reply_markup=reply_markup)
+    context.bot.send_message(
+        chat_id=user_id,
+        text="🕐 Aguarde a confirmação do pagamento. Obrigado pela compra!"
+    )
+
+    # Limpa carrinho após pagamento
+    user_temp_data[user_id]["carrinho"] = []
 
 # Voltar
 def voltar_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    keyboard = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIAS]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    query.edit_message_text("Escolha uma categoria:", reply_markup=reply_markup)
+    mostrar_menu_principal(update.callback_query, context)
 
 def cancelar(update: Update, context: CallbackContext):
     update.message.reply_text("❌ Operação cancelada.")
@@ -159,6 +198,7 @@ def main():
     dp.add_handler(conv_handler)
     dp.add_handler(CallbackQueryHandler(categoria_handler, pattern=r"^cat:"))
     dp.add_handler(CallbackQueryHandler(voltar_handler, pattern=r"^voltar$"))
+    dp.add_handler(CallbackQueryHandler(finalizar_compra_handler, pattern=r"^finalizar$"))
 
     updater.start_polling()
     updater.idle()

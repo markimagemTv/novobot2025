@@ -1,6 +1,6 @@
 import logging
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -78,7 +78,11 @@ def start(update: Update, context: CallbackContext) -> int:
     return ASK_NAME
 
 def ask_phone(update: Update, context: CallbackContext) -> int:
-    context.user_data['name'] = update.message.text
+    name = update.message.text.strip()
+    if not name:
+        update.message.reply_text("❌ Por favor, envie um nome válido.")
+        return ASK_NAME
+    context.user_data['name'] = name
     update.message.reply_text("Agora, por favor, envie seu telefone com DDD (somente números):")
     return ASK_PHONE
 
@@ -115,9 +119,9 @@ def button_handler(update: Update, context: CallbackContext) -> int:
 
     if data.startswith("categoria:"):
         categoria = data.split(":", 1)[1]
-        produtos = PRODUCT_CATALOG.get(categoria, [])
+        produtos_list = PRODUCT_CATALOG.get(categoria, [])
         keyboard = [[InlineKeyboardButton(prod['name'], callback_data=f"produto:{prod['name']}:{prod['price']}")]
-                    for prod in produtos]
+                    for prod in produtos_list]
         keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="voltar")])
         query.edit_message_text(f"Produtos em *{categoria}*:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
@@ -141,7 +145,14 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         return exibir_carrinho(update, context)
 
     elif data == "voltar":
-        produtos(update, context)
+        keyboard = [[InlineKeyboardButton(f"📦 {cat}", callback_data=f"categoria:{cat}")]
+                    for cat in PRODUCT_CATALOG]
+        keyboard.append([InlineKeyboardButton("🛒 Ver Carrinho", callback_data="ver_carrinho")])
+        query.edit_message_text("Escolha uma categoria:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data == "finalizar_pagamento":
+        query.message.delete()
+        finalizar_compra(update, context)
 
     return ConversationHandler.END
 
@@ -154,10 +165,13 @@ def receive_mac(update: Update, context: CallbackContext) -> int:
 
     product = context.user_data.get('selected_product')
     if product:
-        product['mac'] = mac
         cart = context.user_data.setdefault('cart', [])
-        cart.append(product)
-        update.message.reply_text(f"✅ Produto *{product['name']}* com MAC *{mac}* adicionado ao carrinho!", parse_mode='Markdown')
+        if any(item['name'] == product['name'] and item.get('mac') == mac for item in cart):
+            update.message.reply_text(f"⚠️ O produto *{product['name']}* com MAC *{mac}* já está no carrinho!", parse_mode='Markdown')
+        else:
+            product['mac'] = mac
+            cart.append(product)
+            update.message.reply_text(f"✅ Produto *{product['name']}* com MAC *{mac}* adicionado ao carrinho!", parse_mode='Markdown')
     else:
         update.message.reply_text("⚠️ Erro ao salvar produto.")
 
@@ -187,9 +201,11 @@ def exibir_carrinho(update: Update, context: CallbackContext) -> int:
 
 # Finalizar compra
 def finalizar_compra(update: Update, context: CallbackContext) -> None:
+    chat_id = update.effective_chat.id
     cart = context.user_data.get('cart', [])
+
     if not cart:
-        update.message.reply_text("🛒 Seu carrinho está vazio.")
+        context.bot.send_message(chat_id=chat_id, text="🛒 Seu carrinho está vazio.")
         return
 
     items = [{
@@ -213,11 +229,11 @@ def finalizar_compra(update: Update, context: CallbackContext) -> None:
         preference_response = sdk.preference().create(preference_data)
         preference = preference_response["response"]
         context.user_data['cart'] = []  # limpa carrinho
-        keyboard = [[InlineKeyboardButton("💳 Pagar com Mercado Pago", url=preference["init_point"] )]]
-        update.message.reply_text("Clique abaixo para finalizar seu pagamento:", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("💳 Pagar com Mercado Pago", url=preference["init_point"])]]
+        context.bot.send_message(chat_id=chat_id, text="Clique abaixo para finalizar seu pagamento:", reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        update.message.reply_text("❌ Ocorreu um erro ao criar o link de pagamento.")
         logging.error(f"Erro ao criar preferencia: {e}")
+        context.bot.send_message(chat_id=chat_id, text="❌ Ocorreu um erro ao criar o link de pagamento.")
 
 # Main
 def main() -> None:

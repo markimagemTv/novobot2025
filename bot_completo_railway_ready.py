@@ -68,7 +68,7 @@ PRODUCT_CATALOG = {
     ]
 }
 
-# Comando /start
+# /start - Inicia cadastro ou informa já cadastrado
 def start(update: Update, context: CallbackContext) -> int:
     user_data = context.user_data
     if 'name' in user_data and 'phone' in user_data:
@@ -78,11 +78,7 @@ def start(update: Update, context: CallbackContext) -> int:
     return ASK_NAME
 
 def ask_phone(update: Update, context: CallbackContext) -> int:
-    name = update.message.text.strip()
-    if not name:
-        update.message.reply_text("❌ Por favor, envie um nome válido.")
-        return ASK_NAME
-    context.user_data['name'] = name
+    context.user_data['name'] = update.message.text
     update.message.reply_text("Agora, por favor, envie seu telefone com DDD (somente números):")
     return ASK_PHONE
 
@@ -99,19 +95,17 @@ def save_phone(update: Update, context: CallbackContext) -> int:
     )
     return ConversationHandler.END
 
-# Cancelar cadastro
 def cancel(update: Update, context: CallbackContext) -> int:
     update.message.reply_text("Cadastro cancelado.")
     return ConversationHandler.END
 
-# Listar produtos
+# Mostrar categorias de produtos
 def produtos(update: Update, context: CallbackContext) -> None:
-    keyboard = [[InlineKeyboardButton(f"📦 {cat}", callback_data=f"categoria:{cat}")]
-                for cat in PRODUCT_CATALOG]
+    keyboard = [[InlineKeyboardButton(f"📦 {cat}", callback_data=f"categoria:{cat}")] for cat in PRODUCT_CATALOG]
     keyboard.append([InlineKeyboardButton("🛒 Ver Carrinho", callback_data="ver_carrinho")])
     update.message.reply_text("Escolha uma categoria:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# Handler de botão
+# Handler dos botões
 def button_handler(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     query.answer()
@@ -119,9 +113,9 @@ def button_handler(update: Update, context: CallbackContext) -> int:
 
     if data.startswith("categoria:"):
         categoria = data.split(":", 1)[1]
-        produtos_list = PRODUCT_CATALOG.get(categoria, [])
+        produtos = PRODUCT_CATALOG.get(categoria, [])
         keyboard = [[InlineKeyboardButton(prod['name'], callback_data=f"produto:{prod['name']}:{prod['price']}")]
-                    for prod in produtos_list]
+                    for prod in produtos]
         keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="voltar")])
         query.edit_message_text(f"Produtos em *{categoria}*:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
@@ -130,11 +124,12 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         preco_float = float(preco)
         context.user_data['selected_product'] = {'name': nome, 'price': preco_float}
 
+        cart = context.user_data.setdefault('cart', [])
+        # Verifica se produto já está no carrinho (mesmo nome e mac se aplicável)
         if nome in MAC_REQUIRED_PRODUCTS:
             query.edit_message_text(f"📲 Produto: *{nome}*\n\nPor favor, envie a MAC (12 dígitos alfanuméricos, sem `:`):", parse_mode='Markdown')
             return ASK_MAC
         else:
-            cart = context.user_data.setdefault('cart', [])
             if any(item['name'] == nome for item in cart):
                 query.edit_message_text(f"⚠️ O produto *{nome}* já está no carrinho.", parse_mode='Markdown')
             else:
@@ -145,10 +140,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         return exibir_carrinho(update, context)
 
     elif data == "voltar":
-        keyboard = [[InlineKeyboardButton(f"📦 {cat}", callback_data=f"categoria:{cat}")]
-                    for cat in PRODUCT_CATALOG]
-        keyboard.append([InlineKeyboardButton("🛒 Ver Carrinho", callback_data="ver_carrinho")])
-        query.edit_message_text("Escolha uma categoria:", reply_markup=InlineKeyboardMarkup(keyboard))
+        produtos(update, context)
 
     elif data == "finalizar_pagamento":
         query.message.delete()
@@ -156,7 +148,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
 
     return ConversationHandler.END
 
-# Receber MAC
+# Recebe a MAC e adiciona no carrinho
 def receive_mac(update: Update, context: CallbackContext) -> int:
     mac = update.message.text.strip().upper()
     if not (mac.isalnum() and len(mac) == 12):
@@ -166,6 +158,7 @@ def receive_mac(update: Update, context: CallbackContext) -> int:
     product = context.user_data.get('selected_product')
     if product:
         cart = context.user_data.setdefault('cart', [])
+        # Verifica se o mesmo produto com essa MAC já existe no carrinho
         if any(item['name'] == product['name'] and item.get('mac') == mac for item in cart):
             update.message.reply_text(f"⚠️ O produto *{product['name']}* com MAC *{mac}* já está no carrinho!", parse_mode='Markdown')
         else:
@@ -174,10 +167,26 @@ def receive_mac(update: Update, context: CallbackContext) -> int:
             update.message.reply_text(f"✅ Produto *{product['name']}* com MAC *{mac}* adicionado ao carrinho!", parse_mode='Markdown')
     else:
         update.message.reply_text("⚠️ Erro ao salvar produto.")
+        return ConversationHandler.END
+
+    # Mostrar carrinho atualizado
+    mensagem = "🛒 *Seu Carrinho:*\n\n"
+    total = 0
+    for item in cart:
+        linha = f"• {item['name']}"
+        if 'mac' in item:
+            linha += f" (MAC: {item['mac']})"
+        linha += f" - R$ {item['price']:.2f}"
+        mensagem += linha + "\n"
+        total += item['price']
+
+    mensagem += f"\n──────────────\n💰 *Total: R$ {total:.2f}*"
+    keyboard = [[InlineKeyboardButton("💳 Finalizar Compra", callback_data="finalizar_pagamento")]]
+    update.message.reply_text(mensagem, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
 
     return ConversationHandler.END
 
-# Exibir carrinho
+# Exibir carrinho (quando clica no botão ver carrinho)
 def exibir_carrinho(update: Update, context: CallbackContext) -> int:
     cart = context.user_data.get('cart', [])
     if not cart:
@@ -199,13 +208,20 @@ def exibir_carrinho(update: Update, context: CallbackContext) -> int:
     update.callback_query.message.reply_text(mensagem, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
-# Finalizar compra
+# Criar preferência Mercado Pago e enviar link
 def finalizar_compra(update: Update, context: CallbackContext) -> None:
-    chat_id = update.effective_chat.id
-    cart = context.user_data.get('cart', [])
+    # Pode vir por callback_query ou mensagem, tratamos ambos
+    if update.callback_query:
+        user = update.callback_query.from_user
+    else:
+        user = update.message.from_user
 
+    cart = context.user_data.get('cart', [])
     if not cart:
-        context.bot.send_message(chat_id=chat_id, text="🛒 Seu carrinho está vazio.")
+        if update.callback_query:
+            update.callback_query.message.reply_text("🛒 Seu carrinho está vazio.")
+        else:
+            update.message.reply_text("🛒 Seu carrinho está vazio.")
         return
 
     items = [{
@@ -230,12 +246,18 @@ def finalizar_compra(update: Update, context: CallbackContext) -> None:
         preference = preference_response["response"]
         context.user_data['cart'] = []  # limpa carrinho
         keyboard = [[InlineKeyboardButton("💳 Pagar com Mercado Pago", url=preference["init_point"])]]
-        context.bot.send_message(chat_id=chat_id, text="Clique abaixo para finalizar seu pagamento:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+        if update.callback_query:
+            update.callback_query.message.reply_text("Clique abaixo para finalizar seu pagamento:", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            update.message.reply_text("Clique abaixo para finalizar seu pagamento:", reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         logging.error(f"Erro ao criar preferencia: {e}")
-        context.bot.send_message(chat_id=chat_id, text="❌ Ocorreu um erro ao criar o link de pagamento.")
+        if update.callback_query:
+            update.callback_query.message.reply_text("❌ Ocorreu um erro ao criar o link de pagamento.")
+        else:
+            update.message.reply_text("❌ Ocorreu um erro ao criar o link de pagamento.")
 
-# Main
 def main() -> None:
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
@@ -252,7 +274,6 @@ def main() -> None:
 
     dp.add_handler(conv_handler)
     dp.add_handler(CommandHandler("produtos", produtos))
-    dp.add_handler(CommandHandler("finalizar_compra", finalizar_compra))
     dp.add_handler(CallbackQueryHandler(button_handler))
 
     updater.start_polling()

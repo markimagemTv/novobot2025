@@ -11,7 +11,7 @@ load_dotenv()
 
 # Configurações
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-MERCADO_PAGO_TOKEN = os.getenv("MERCADO_PAGO_TOKEN")
+MP_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_TOKEN")
 
 # Configura logger
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

@@ -494,7 +494,7 @@ def format_cart_message(cart_items):
                         details = f" - {credits} créditos{discount_text}"
                 
                 # Add any fields if present
-               if 'fields' in item.details:
+                if 'fields' in item.details:
     fields = item.details['fields']
     if fields:
         fields_text = ", ".join(f"`{k}: {v}`" for k, v in fields.items())

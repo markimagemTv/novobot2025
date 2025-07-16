@@ -136,9 +136,10 @@ def pagar_pix(update: Update, context: CallbackContext):
     carrinho = CARTS.get(user_id, [])
     total = sum(i['price'] for i in carrinho)
     order_id = str(uuid.uuid4())[:8]
+    user_info = USERS.get(user_id, {})
     order = {
         "id": order_id,
-        "user": USERS.get(user_id, {}),
+        "user": user_info,
         "items": carrinho,
         "status": "pendente",
         "created_at": datetime.now().isoformat()
@@ -146,16 +147,25 @@ def pagar_pix(update: Update, context: CallbackContext):
     ORDERS[order_id] = order
     salvar_json(ORDERS_FILE, ORDERS)
     CARTS[user_id] = []
-    payment = mp.payment().create({
+
+    payment_data = {
         "transaction_amount": float(total),
         "description": f"Pedido #{order_id}",
         "payment_method_id": "pix",
-        "payer": {"email": f"{user_id}@exemplo.com"}
-    })['response']
-    pix = payment['point_of_interaction']['transaction_data']['qr_code']
-    context.bot.send_message(user_id, f"Use o código PIX:\n`{pix}`", parse_mode='Markdown')
+        "payer": {
+            "email": f"{user_id}@exemplo.com",
+            "first_name": user_info.get("nome", "Cliente")
+        },
+        "external_reference": order_id
+    }
+
+    payment = mp.payment().create(payment_data)["response"]
+    pix_code = payment['point_of_interaction']['transaction_data']['qr_code']
+    context.bot.send_message(user_id, f"Use o código PIX abaixo para pagar:\n`{pix_code}`", parse_mode='Markdown')
+
     if ADMIN_ID:
-        context.bot.send_message(ADMIN_ID, f"📦 Novo Pedido #{order_id}\nCliente: {order['user']}\nItens: {len(carrinho)}\nTotal: R${total:.2f}")
+        resumo = f"📦 Novo Pedido #{order_id}\nCliente: {user_info.get('nome')}\nTelefone: {user_info.get('telefone')}\nItens: {len(carrinho)}\nTotal: R${total:.2f}"
+        context.bot.send_message(ADMIN_ID, resumo)
 
 def admin_entregar(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
@@ -171,8 +181,9 @@ def admin_entregar(update: Update, context: CallbackContext):
         return
     order['status'] = 'entregue'
     salvar_json(ORDERS_FILE, ORDERS)
-    uid = next(k for k, v in USERS.items() if v == order['user'])
-    context.bot.send_message(uid, f"✅ Seu pedido #{order_id} foi entregue!")
+    uid = next((k for k, v in USERS.items() if v == order['user']), None)
+    if uid:
+        context.bot.send_message(uid, f"✅ Seu pedido #{order_id} foi entregue!")
     update.message.reply_text("Cliente notificado.")
 
 def admin_relatorio(update: Update, context: CallbackContext):

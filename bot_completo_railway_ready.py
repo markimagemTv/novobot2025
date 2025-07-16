@@ -1,6 +1,8 @@
 import logging
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import io
+import qrcode
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, InputFile
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -102,8 +104,7 @@ def cancel(update: Update, context: CallbackContext) -> int:
 
 # Listar produtos
 def produtos(update: Update, context: CallbackContext) -> None:
-    keyboard = [[InlineKeyboardButton(f"📦 {cat}", callback_data=f"categoria:{cat}")]
-                for cat in PRODUCT_CATALOG]
+    keyboard = [[InlineKeyboardButton(f"📦 {cat}", callback_data=f"categoria:{cat}")] for cat in PRODUCT_CATALOG]
     keyboard.append([InlineKeyboardButton("🛒 Ver Carrinho", callback_data="ver_carrinho")])
     update.message.reply_text("Escolha uma categoria:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -116,10 +117,9 @@ def button_handler(update: Update, context: CallbackContext) -> int:
     if data.startswith("categoria:"):
         categoria = data.split(":", 1)[1]
         produtos = PRODUCT_CATALOG.get(categoria, [])
-        keyboard = [[InlineKeyboardButton(prod['name'], callback_data=f"produto:{prod['name']}:{prod['price']}")]
-                    for prod in produtos]
+        keyboard = [[InlineKeyboardButton(prod['name'], callback_data=f"produto:{prod['name']}:{prod['price']}")] for prod in produtos]
         keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="voltar")])
-        query.edit_message_text(f"Produtos em *{categoria}*:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        query.edit_message_text(f"Produtos em *{categoria}*:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
     elif data.startswith("produto:"):
         _, nome, preco = data.split(":", 2)
@@ -127,15 +127,15 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         context.user_data['selected_product'] = {'name': nome, 'price': preco_float}
 
         if nome in MAC_REQUIRED_PRODUCTS:
-            query.edit_message_text(f"📲 Produto: *{nome}*\n\nPor favor, envie a MAC (12 dígitos alfanuméricos, sem `:`):", parse_mode='Markdown')
+            query.edit_message_text(f"📲 Produto: *{nome}*\n\nPor favor, envie a MAC (12 dígitos alfanuméricos, sem `:`):", parse_mode=ParseMode.MARKDOWN)
             return ASK_MAC
         else:
             cart = context.user_data.setdefault('cart', [])
             if any(item['name'] == nome for item in cart):
-                query.edit_message_text(f"⚠️ O produto *{nome}* já está no carrinho.", parse_mode='Markdown')
+                query.edit_message_text(f"⚠️ O produto *{nome}* já está no carrinho.", parse_mode=ParseMode.MARKDOWN)
             else:
                 cart.append({'name': nome, 'price': preco_float})
-                query.edit_message_text(f"✅ Produto *{nome}* foi adicionado ao carrinho!", parse_mode='Markdown')
+                query.edit_message_text(f"✅ Produto *{nome}* foi adicionado ao carrinho!", parse_mode=ParseMode.MARKDOWN)
 
     elif data == "ver_carrinho":
         return exibir_carrinho(update, context)
@@ -148,7 +148,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
 
     return ConversationHandler.END
 
-# Receber MAC
+# Receber MAC e gerar pagamento com QR code
 def receive_mac(update: Update, context: CallbackContext) -> int:
     mac = update.message.text.strip().upper()
     if not (mac.isalnum() and len(mac) == 12):
@@ -158,64 +158,97 @@ def receive_mac(update: Update, context: CallbackContext) -> int:
     product = context.user_data.get('selected_product')
     if product:
         cart = context.user_data.setdefault('cart', [])
-        # Verifica se o produto com essa MAC já está no carrinho
         if any(item['name'] == product['name'] and item.get('mac') == mac for item in cart):
-            update.message.reply_text(f"⚠️ O produto *{product['name']}* com MAC *{mac}* já está no carrinho!", parse_mode='Markdown')
+            update.message.reply_text(f"⚠️ O produto *{product['name']}* com MAC *{mac}* já está no carrinho!", parse_mode=ParseMode.MARKDOWN)
+            return ConversationHandler.END
         else:
             product_with_mac = product.copy()
             product_with_mac['mac'] = mac
             cart.append(product_with_mac)
-            update.message.reply_text(f"✅ Produto *{product['name']}* com MAC *{mac}* adicionado ao carrinho!", parse_mode='Markdown')
+            update.message.reply_text(f"✅ Produto *{product['name']}* com MAC *{mac}* adicionado ao carrinho!", parse_mode=ParseMode.MARKDOWN)
+
+            # Limpa produto selecionado
+            context.user_data.pop('selected_product', None)
+
+            # Gera pagamento Pix e envia QR code
+            enviar_link_pix_com_qr(update, context, cart)
+
+            return ConversationHandler.END
     else:
         update.message.reply_text("⚠️ Erro ao salvar produto.")
         return ConversationHandler.END
 
-    # Mostrar carrinho atualizado
-    mensagem = "🛒 *Seu Carrinho:*\n\n"
-    total = 0
-    for item in cart:
-        linha = f"• {item['name']}"
-        if 'mac' in item:
-            linha += f" (MAC: {item['mac']})"
-        linha += f" - R$ {item['price']:.2f}"
-        mensagem += linha + "\n"
-        total += item['price']
+# Função para gerar preferência Pix com Mercado Pago e enviar QR code no Telegram
+def enviar_link_pix_com_qr(update: Update, context: CallbackContext, cart: list) -> None:
+    try:
+        total = sum(item['price'] for item in cart)
+        # Criar preferência MERCADO PAGO sem itens, pois vamos usar pagamento direto Pix (você pode ajustar se quiser manter itens)
+        # Aqui vamos criar um pagamento Pix direto via API MercadoPago (customizando)
+        payment_data = {
+            "transaction_amount": total,
+            "description": "Compra via Telegram",
+            "payment_method_id": "pix",
+            "payer": {
+                "email": "cliente@example.com"  # pode ser genérico ou usar email real se tiver
+            }
+        }
+        payment_response = sdk.payment().create(payment_data)
+        payment = payment_response["response"]
 
-    mensagem += f"\n──────────────\n💰 *Total: R$ {total:.2f}*"
-    keyboard = [[InlineKeyboardButton("💳 Finalizar Compra", callback_data="finalizar_pagamento")]]
+        pix_info = payment.get("point_of_interaction", {}).get("transaction_data", {})
+        qr_code = pix_info.get("qr_code")
+        qr_code_base64 = pix_info.get("qr_code_base64")
 
-    update.message.reply_text(mensagem, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+        if not qr_code:
+            update.message.reply_text("❌ Não foi possível gerar o QR code PIX. Tente novamente mais tarde.")
+            return
 
-    # Limpa produto selecionado para evitar conflito
-    context.user_data.pop('selected_product', None)
+        # Gerar imagem do QR code a partir do texto QR code
+        img = qrcode.make(qr_code)
+        bio = io.BytesIO()
+        img.save(bio, format='PNG')
+        bio.seek(0)
 
-    return ConversationHandler.END
+        # Enviar imagem do QR code no Telegram junto com o link de pagamento
+        update.message.reply_photo(photo=InputFile(bio, filename="pix.png"),
+                                  caption=f"💳 Total: R$ {total:.2f}\n\n"
+                                          f"📲 Escaneie o QR code acima para pagar via PIX.\n"
+                                          f"Ou clique no link abaixo para pagar:\n"
+                                          f"{payment['transaction_details']['external_resource_url']}")
 
-# Exibir carrinho
+        # Limpa carrinho após enviar
+        context.user_data['cart'] = []
+
+    except Exception as e:
+        logging.error(f"Erro ao criar pagamento Pix: {e}")
+        update.message.reply_text("❌ Ocorreu um erro ao criar o pagamento Pix.")
+
+# Exibir carrinho com opção de finalizar
 def exibir_carrinho(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    query.answer()
     cart = context.user_data.get('cart', [])
     if not cart:
-        update.callback_query.message.reply_text("🛒 Seu carrinho está vazio.")
+        query.edit_message_text("🛒 Seu carrinho está vazio.")
         return ConversationHandler.END
 
-    mensagem = "🛒 *Seu Carrinho:*\n\n"
+    texto = "🛒 *Seu carrinho:*\n"
     total = 0
     for item in cart:
-        linha = f"• {item['name']}"
-        if 'mac' in item:
-            linha += f" (MAC: {item['mac']})"
-        linha += f" - R$ {item['price']:.2f}"
-        mensagem += linha + "\n"
-        total += item['price']
+        nome = item['name']
+        preco = item['price']
+        mac = item.get('mac')
+        texto += f"- {nome}" + (f" (MAC: {mac})" if mac else "") + f": R$ {preco:.2f}\n"
+        total += preco
+    texto += f"\n*Total: R$ {total:.2f}*"
 
-    mensagem += f"\n──────────────\n💰 *Total: R$ {total:.2f}*"
-    keyboard = [[InlineKeyboardButton("💳 Finalizar Compra", callback_data="finalizar_pagamento")]]
-    update.callback_query.message.reply_text(mensagem, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("Finalizar Pagamento", callback_data="finalizar_pagamento")],
+                [InlineKeyboardButton("Continuar Comprando", callback_data="voltar")]]
+    query.edit_message_text(texto, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
     return ConversationHandler.END
 
-# Finalizar compra
+# Finalizar compra - gera QR code Pix se carrinho não vazio
 def finalizar_compra(update: Update, context: CallbackContext) -> None:
-    # Verifica se chamada foi por callback ou mensagem
     if update.callback_query:
         update.callback_query.answer()
         user_message = update.callback_query.message
@@ -227,52 +260,26 @@ def finalizar_compra(update: Update, context: CallbackContext) -> None:
         user_message.reply_text("🛒 Seu carrinho está vazio.")
         return
 
-    items = [{
-        "title": item['name'] + (f" (MAC: {item['mac']})" if 'mac' in item else ""),
-        "quantity": 1,
-        "currency_id": "BRL",
-        "unit_price": item['price']
-    } for item in cart]
+    enviar_link_pix_com_qr(update, context, cart)
 
-    preference_data = {
-        "items": items,
-        "back_urls": {
-            "success": "https://seusite.com/sucesso",
-            "failure": "https://seusite.com/erro",
-            "pending": "https://seusite.com/pendente"
-        },
-        "auto_return": "approved"
-    }
-
-    try:
-        preference_response = sdk.preference().create(preference_data)
-        preference = preference_response["response"]
-        context.user_data['cart'] = []  # limpa carrinho
-        keyboard = [[InlineKeyboardButton("💳 Pagar com Mercado Pago", url=preference["init_point"])]]
-        user_message.reply_text("Clique abaixo para finalizar seu pagamento:", reply_markup=InlineKeyboardMarkup(keyboard))
-    except Exception as e:
-        user_message.reply_text("❌ Ocorreu um erro ao criar o link de pagamento.")
-        logging.error(f"Erro ao criar preferencia: {e}")
-
-# Main
+# Setup do bot e handlers
 def main() -> None:
-    updater = Updater(TELEGRAM_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    updater = Updater(TELEGRAM_TOKEN)
+    dispatcher = updater.dispatcher
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler('start', start)],
         states={
             ASK_NAME: [MessageHandler(Filters.text & ~Filters.command, ask_phone)],
             ASK_PHONE: [MessageHandler(Filters.text & ~Filters.command, save_phone)],
             ASK_MAC: [MessageHandler(Filters.text & ~Filters.command, receive_mac)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
 
-    dp.add_handler(conv_handler)
-    dp.add_handler(CommandHandler("produtos", produtos))
-    dp.add_handler(CommandHandler("finalizar_compra", finalizar_compra))
-    dp.add_handler(CallbackQueryHandler(button_handler))
+    dispatcher.add_handler(conv_handler)
+    dispatcher.add_handler(CommandHandler('produtos', produtos))
+    dispatcher.add_handler(CallbackQueryHandler(button_handler))
 
     updater.start_polling()
     updater.idle()

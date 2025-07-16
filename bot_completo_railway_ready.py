@@ -1,12 +1,6 @@
 import logging
 import os
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    ReplyKeyboardMarkup,
-    KeyboardButton
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -23,64 +17,58 @@ import mercadopago
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 MP_ACCESS_TOKEN = os.getenv("MERCADO_PAGO_TOKEN")
-
-if not TELEGRAM_TOKEN or not MP_ACCESS_TOKEN:
-    raise ValueError("Tokens de ambiente não encontrados.")
-
 sdk = mercadopago.SDK(MP_ACCESS_TOKEN)
 
 # Logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # Estados da conversa
 ASK_NAME, ASK_PHONE, ASK_MAC = range(3)
 
 # Produtos que exigem MAC
 MAC_REQUIRED_PRODUCTS = {
-    "ASSIST+",
-    "NINJA PLAYER",
-    "MEGA IPTV",
-    "SMART ONE",
-    "IBO PRO PLAYER",
-    "IBO TV OFICIAL",
-    "DUPLECAST",
-    "BAY TV",
-    "QUICK PLAYER",
-    "TIVI PLAYER",
-    "SUPER PLAY",
-    "CLOUDDY"
+    "➕​ ASSIST+ R$ 65",
+    "📱 NINJA PLAYER R$65",
+    "📺 MEGA IPTV R$ 75",
+    "🧠 SMART ONE R$60",
+    "🎮 IBO PRO PLAYER R$50",
+    "📡 IBO TV OFICIAL R$50",
+    "🧩 DUPLECAST R$60",
+    "🌐 BAY TV R$60",
+    "🟣​ QUICK PLAYER R$65",
+    "▶️​ TIVI PLAYER R$65",
+    "🔥 SUPER PLAY R$50",
+    "☁️ CLOUDDY R$65"
 }
 
 # Catálogo
 PRODUCT_CATALOG = {
     "ATIVAR APP": [
-        {"name": "ASSIST+", "price": 65.00},
-        {"name": "NINJA PLAYER", "price": 65.00},
-        {"name": "MEGA IPTV", "price": 75.00},
-        {"name": "SMART ONE", "price": 70.00},
-        {"name": "IBO PRO PLAYER", "price": 50.00},
-        {"name": "IBO TV OFICIAL", "price": 50.00},
-        {"name": "DUPLECAST", "price": 60.00},
-        {"name": "BAY TV", "price": 60.00},
-        {"name": "QUICK PLAYER", "price": 65.00},
-        {"name": "TIVI PLAYER", "price": 65.00},
-        {"name": "SUPER PLAY", "price": 50.00},
-        {"name": "CLOUDDY", "price": 65.00},
+        {"name": "➕​ ASSIST+ R$ 65", "price": 65.00},
+        {"name": "📱 NINJA PLAYER R$65", "price": 65.00},
+        {"name": "📺 MEGA IPTV R$ 75", "price": 75.00},
+        {"name": "🧠 SMART ONE R$60", "price": 70.00},
+        {"name": "🎮 IBO PRO PLAYER R$50", "price": 50.00},
+        {"name": "📡 IBO TV OFICIAL R$50", "price": 50.00},
+        {"name": "🧩 DUPLECAST R$60", "price": 60.00},
+        {"name": "🌐 BAY TV R$60", "price": 60.00},
+        {"name": "🟣​ QUICK PLAYER R$65", "price": 65.00},
+        {"name": "▶️​ TIVI PLAYER R$65", "price": 65.00},
+        {"name": "🔥 SUPER PLAY R$50", "price": 50.00},
+        {"name": "☁️ CLOUDDY R$65", "price": 65.00},
     ],
     "COMPRAR CRÉDITOS": [
-        {"name": "X SERVER PLAY", "price": 13.50},
-        {"name": "FAST PLAYER", "price": 13.50},
-        {"name": "GOLD PLAY", "price": 13.50},
-        {"name": "EI TV", "price": 13.50},
-        {"name": "Z TECH", "price": 13.50},
-        {"name": "GENIAL PLAY", "price": 13.50},
-        {"name": "UPPER PLAY", "price": 150.00},
+        {"name": "🎯 X SERVER PLAY (13,50und)", "price": 13.50},
+        {"name": "⚡ FAST PLAYER (13,50und)", "price": 13.50},
+        {"name": "👑 GOLD PLAY (13,50und)", "price": 13.50},
+        {"name": "📺 EI TV (13,50und)", "price": 13.50},
+        {"name": "🛰️ Z TECH (13,50und)", "price": 13.50},
+        {"name": "🧠 GENIAL PLAY (13,50und)", "price": 13.50},
+        {"name": "🚀 UPPER PLAY (15,00und)", "price": 150.00},
     ]
 }
 
+# Comando /start
 def start(update: Update, context: CallbackContext) -> int:
     user_data = context.user_data
     if 'name' in user_data and 'phone' in user_data:
@@ -90,33 +78,36 @@ def start(update: Update, context: CallbackContext) -> int:
     return ASK_NAME
 
 def ask_phone(update: Update, context: CallbackContext) -> int:
-    context.user_data['name'] = update.message.text.strip()
-    reply_markup = ReplyKeyboardMarkup(
-        [[KeyboardButton("\ud83d\udcf1 Enviar meu telefone", request_contact=True)]],
-        one_time_keyboard=True,
-        resize_keyboard=True
-    )
-    update.message.reply_text("Agora, clique abaixo para enviar seu telefone:", reply_markup=reply_markup)
+    context.user_data['name'] = update.message.text
+    update.message.reply_text("Agora, por favor, envie seu telefone com DDD (somente números):")
     return ASK_PHONE
 
 def save_phone(update: Update, context: CallbackContext) -> int:
-    contact = update.message.contact
-    context.user_data['phone'] = contact.phone_number
+    phone = update.message.text.strip()
+    if not phone.isdigit():
+        update.message.reply_text("❌ Por favor, envie um número de telefone válido contendo apenas dígitos.")
+        return ASK_PHONE
+
+    context.user_data['phone'] = phone
     name = context.user_data['name']
     update.message.reply_text(
-        f"\u2705 Cadastro concluído!\nNome: {name}\nTelefone: {contact.phone_number}\n\nUse /produtos para ver o catálogo."
+        f"✅ Cadastro concluído!\nNome: {name}\nTelefone: {phone}\n\nUse /produtos para ver o catálogo."
     )
     return ConversationHandler.END
 
+# Cancelar cadastro
 def cancel(update: Update, context: CallbackContext) -> int:
     update.message.reply_text("Cadastro cancelado.")
     return ConversationHandler.END
 
+# Listar produtos
 def produtos(update: Update, context: CallbackContext) -> None:
-    keyboard = [[InlineKeyboardButton(f"\ud83d\udce6 {cat}", callback_data=f"categoria:{cat}")]
+    keyboard = [[InlineKeyboardButton(f"📦 {cat}", callback_data=f"categoria:{cat}")]
                 for cat in PRODUCT_CATALOG]
+    keyboard.append([InlineKeyboardButton("🛒 Ver Carrinho", callback_data="ver_carrinho")])
     update.message.reply_text("Escolha uma categoria:", reply_markup=InlineKeyboardMarkup(keyboard))
 
+# Handler de botão
 def button_handler(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     query.answer()
@@ -125,11 +116,10 @@ def button_handler(update: Update, context: CallbackContext) -> int:
     if data.startswith("categoria:"):
         categoria = data.split(":", 1)[1]
         produtos = PRODUCT_CATALOG.get(categoria, [])
-        keyboard = [[InlineKeyboardButton(f"{prod['name']} R$ {prod['price']:.2f}",
-                                          callback_data=f"produto:{prod['name']}:{prod['price']}")]
+        keyboard = [[InlineKeyboardButton(prod['name'], callback_data=f"produto:{prod['name']}:{prod['price']}")]
                     for prod in produtos]
-        query.edit_message_text(f"Produtos em *{categoria}*:",
-                                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data="voltar")])
+        query.edit_message_text(f"Produtos em *{categoria}*:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
     elif data.startswith("produto:"):
         _, nome, preco = data.split(":", 2)
@@ -137,19 +127,29 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         context.user_data['selected_product'] = {'name': nome, 'price': preco_float}
 
         if nome in MAC_REQUIRED_PRODUCTS:
-            query.edit_message_text(f"\ud83d\udcf2 Produto: *{nome}*\n\nPor favor, envie a MAC (12 dígitos alfanuméricos, sem `:`):", parse_mode='Markdown')
+            query.edit_message_text(f"📲 Produto: *{nome}*\n\nPor favor, envie a MAC (12 dígitos alfanuméricos, sem `:`):", parse_mode='Markdown')
             return ASK_MAC
         else:
             cart = context.user_data.setdefault('cart', [])
-            cart.append({'name': nome, 'price': preco_float})
-            query.edit_message_text(f"\u2705 Produto *{nome}* foi adicionado ao carrinho!", parse_mode='Markdown')
+            if any(item['name'] == nome for item in cart):
+                query.edit_message_text(f"⚠️ O produto *{nome}* já está no carrinho.", parse_mode='Markdown')
+            else:
+                cart.append({'name': nome, 'price': preco_float})
+                query.edit_message_text(f"✅ Produto *{nome}* foi adicionado ao carrinho!", parse_mode='Markdown')
+
+    elif data == "ver_carrinho":
+        return exibir_carrinho(update, context)
+
+    elif data == "voltar":
+        produtos(update, context)
 
     return ConversationHandler.END
 
+# Receber MAC
 def receive_mac(update: Update, context: CallbackContext) -> int:
     mac = update.message.text.strip().upper()
     if not (mac.isalnum() and len(mac) == 12):
-        update.message.reply_text("\u274c MAC inválida. Envie exatamente 12 caracteres alfanuméricos.")
+        update.message.reply_text("❌ MAC inválida. Envie exatamente 12 caracteres alfanuméricos.")
         return ASK_MAC
 
     product = context.user_data.get('selected_product')
@@ -157,35 +157,39 @@ def receive_mac(update: Update, context: CallbackContext) -> int:
         product['mac'] = mac
         cart = context.user_data.setdefault('cart', [])
         cart.append(product)
-        update.message.reply_text(f"\u2705 Produto *{product['name']}* com MAC *{mac}* adicionado ao carrinho!", parse_mode='Markdown')
+        update.message.reply_text(f"✅ Produto *{product['name']}* com MAC *{mac}* adicionado ao carrinho!", parse_mode='Markdown')
     else:
-        update.message.reply_text("\u26a0\ufe0f Erro ao salvar produto.")
+        update.message.reply_text("⚠️ Erro ao salvar produto.")
 
     return ConversationHandler.END
 
-def carrinho(update: Update, context: CallbackContext) -> None:
+# Exibir carrinho
+def exibir_carrinho(update: Update, context: CallbackContext) -> int:
     cart = context.user_data.get('cart', [])
     if not cart:
-        update.message.reply_text("\ud83d\uded2 Seu carrinho está vazio.")
-        return
+        update.callback_query.message.reply_text("🛒 Seu carrinho está vazio.")
+        return ConversationHandler.END
 
-    mensagem = "\ud83d\uded2 *Seu Carrinho:*\n\n"
+    mensagem = "🛒 *Seu Carrinho:*\n\n"
     total = 0
     for item in cart:
-        linha = f"\u2022 {item['name']}"
+        linha = f"• {item['name']}"
         if 'mac' in item:
             linha += f" (MAC: {item['mac']})"
         linha += f" - R$ {item['price']:.2f}"
         mensagem += linha + "\n"
         total += item['price']
 
-    mensagem += f"\n\ud83d\udcb0 *Total: R$ {total:.2f}*"
-    update.message.reply_text(mensagem, parse_mode='Markdown')
+    mensagem += f"\n──────────────\n💰 *Total: R$ {total:.2f}*"
+    keyboard = [[InlineKeyboardButton("💳 Finalizar Compra", callback_data="finalizar_pagamento")]]
+    update.callback_query.message.reply_text(mensagem, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+    return ConversationHandler.END
 
+# Finalizar compra
 def finalizar_compra(update: Update, context: CallbackContext) -> None:
     cart = context.user_data.get('cart', [])
     if not cart:
-        update.message.reply_text("\ud83d\uded2 Seu carrinho está vazio.")
+        update.message.reply_text("🛒 Seu carrinho está vazio.")
         return
 
     items = [{
@@ -198,9 +202,9 @@ def finalizar_compra(update: Update, context: CallbackContext) -> None:
     preference_data = {
         "items": items,
         "back_urls": {
-            "success": "https://www.seusite.com/sucesso",
-            "failure": "https://www.seusite.com/erro",
-            "pending": "https://www.seusite.com/pendente"
+            "success": "https://seusite.com/sucesso",
+            "failure": "https://seusite.com/erro",
+            "pending": "https://seusite.com/pendente"
         },
         "auto_return": "approved"
     }
@@ -208,16 +212,14 @@ def finalizar_compra(update: Update, context: CallbackContext) -> None:
     try:
         preference_response = sdk.preference().create(preference_data)
         preference = preference_response["response"]
+        context.user_data['cart'] = []  # limpa carrinho
+        keyboard = [[InlineKeyboardButton("💳 Pagar com Mercado Pago", url=preference["init_point"] )]]
+        update.message.reply_text("Clique abaixo para finalizar seu pagamento:", reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        logging.error(f"Erro ao criar preferência Mercado Pago: {e}")
-        update.message.reply_text("❌ Erro ao gerar link de pagamento. Tente novamente mais tarde.")
-        return
+        update.message.reply_text("❌ Ocorreu um erro ao criar o link de pagamento.")
+        logging.error(f"Erro ao criar preferencia: {e}")
 
-    context.user_data['cart'] = []  # limpa carrinho
-
-    keyboard = [[InlineKeyboardButton("\ud83d\udcb3 Pagar com Mercado Pago", url=preference["init_point"] )]]
-    update.message.reply_text("Clique abaixo para finalizar seu pagamento:", reply_markup=InlineKeyboardMarkup(keyboard))
-
+# Main
 def main() -> None:
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
@@ -226,7 +228,7 @@ def main() -> None:
         entry_points=[CommandHandler("start", start)],
         states={
             ASK_NAME: [MessageHandler(Filters.text & ~Filters.command, ask_phone)],
-            ASK_PHONE: [MessageHandler(Filters.contact, save_phone)],
+            ASK_PHONE: [MessageHandler(Filters.text & ~Filters.command, save_phone)],
             ASK_MAC: [MessageHandler(Filters.text & ~Filters.command, receive_mac)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
@@ -234,7 +236,6 @@ def main() -> None:
 
     dp.add_handler(conv_handler)
     dp.add_handler(CommandHandler("produtos", produtos))
-    dp.add_handler(CommandHandler("carrinho", carrinho))
     dp.add_handler(CommandHandler("finalizar_compra", finalizar_compra))
     dp.add_handler(CallbackQueryHandler(button_handler))
 

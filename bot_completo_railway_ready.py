@@ -410,6 +410,15 @@ class DataStore:
         """Get all orders for a user"""
         return [order for order in self.orders.values() if order.user_id == user_id]
 
+    def get_total_paid_orders_value(self):
+        """Calcula o total financeiro dos pedidos pagos"""
+        return sum(
+            sum(item.price for item in order.items)
+            for order in self.orders.values()
+            if order.status == "pago"
+        )
+
+
 # Inicializar armazenamento de dados
 db = DataStore()
 
@@ -485,13 +494,15 @@ def format_cart_message(cart_items):
                         details = f" - {credits} créditos{discount_text}"
                 
                 # Add any fields if present
-                if 'fields' in item.details:
-                    fields = item.details['fields']
-                    if fields:
-                        fields_text = ", ".join(f"{k}: {v}" for k, v in fields.items())
-                        details += f"\n   ↳ {fields_text}"
+               if 'fields' in item.details:
+    fields = item.details['fields']
+    if fields:
+        fields_text = ", ".join(f"`{k}: {v}`" for k, v in fields.items())
+        details += f"\n   ↳ {fields_text}"
+
             
-            message += f"{i}. {item.name} - R${price:.2f}{details}\n"
+
+         message += f"{i}. {item.name} - R${price:.2f}{details}\n"
             total += price
             
         except Exception as e:
@@ -4641,3 +4652,6 @@ def main():
 if __name__ == "__main__":
     main()
 
+
+
+dispatcher.add_handler(CommandHandler("financeiro", financeiro_handler))

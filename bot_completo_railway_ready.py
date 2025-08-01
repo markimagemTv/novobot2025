@@ -99,13 +99,14 @@ PRODUCT_CATALOG = {
         {"name": "☁️ CLOUDDY R$65", "price": 65.00, "fields": ["E-mail", "Senha do app"]},
     ],
     "COMPRAR CRÉDITOS": [
-        {"name": "🎯 X SERVER PLAY (13,50und)", "price": 13.50, "discount": True},
+         {"name": "🎯 X SERVER PLAY (14,50und)", "price": 14.50, "discount": False},
         {"name": "⚡ FAST PLAYER (13,50und)", "price": 13.50, "discount": True},
-        {"name": "👑 GOLD PLAY (13,50und)", "price": 13.50, "discount": True},
+        {"name": "👑 GOLD PLAY (13.50und)", "price": 13.50, "discount": True},
         {"name": "📺 EI TV (13,50und)", "price": 13.50, "discount": True},
-        {"name": "🛰️ Z TECH (13,50und)", "price": 13.50, "discount": True},
+        {"name": "🛰️ Z TECH (12,50und)", "price": 12.50, "discount": False},
         {"name": "🧠 GENIAL PLAY (13,50und)", "price": 13.50, "discount": True},
-        {"name": "🚀 UPPER PLAY (15,00und)", "price": 150.00, "discount": False},
+        {"name": "🚀 UPPER PLAY (16,50und)", "price": 165.00, "discount": False},
+        {"name": "📡 SLIM PLAY (11,00und)", "price": 110.00, "discount": True},
     ],
     "🔥 PROMOÇÕES": [
         {"name": "📺 PACOTE 30 CRÉDITOS EI TV", "price": 300.00, "discount": False},

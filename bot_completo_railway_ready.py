@@ -95,8 +95,8 @@ PRODUCT_CATALOG = {
         {"name": "📺 TIVI PLAYER R$65", "price": 65.00, "fields": ["MAC"]},
         {"name": "🎬 FLIX IPTV R$110", "price": 110.00, "fields": ["MAC"]},
         {"name": "⚙️ SET IPTV R$130", "price": 130.00, "fields": ["MAC"]},
-        {"name": "💿 LAZER PLAYER R$50", "price": 50.00, "fields": ["MAC", "CHAVE"]},
         {"name": "🔥 SUPER PLAY R$50", "price": 50.00, "fields": ["MAC"]},
+        {"name": "💿 LAZER PLAYER R$50", "price": 50.00, "fields": ["MAC"]},
         {"name": "☁️ CLOUDDY R$65", "price": 65.00, "fields": ["E-mail", "Senha do app"]},
     ],
     "COMPRAR CRÉDITOS": [
